@@ -1,9 +1,13 @@
 using System.Security.Claims;
+using System.Security.Cryptography;
 using DulceAtardecer.Constants;
+using DulceAtardecer.Data;
 using DulceAtardecer.Models;
 using DulceAtardecer.Models.Settings;
 using DulceAtardecer.Repository.IRepository;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
@@ -11,12 +15,15 @@ using Microsoft.IdentityModel.Tokens;
 namespace DulceAtardecer.Repository;
 
 public class UserRepository(
+    ApplicationDbContext db,
     UserManager<ApplicationUser> userManager,
     ISessionRepository sessionRepository,
     IOptions<ApiSettings> apiSettings,
     TimeProvider timeProvider) : IUserRepository
 {
     private const string InvalidCredentialsMessage = "Usuario o contraseña incorrectos";
+    private const string TemporaryPasswordAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+    private const int TemporaryPasswordLength = 8;
     private static readonly TimeSpan RefreshReuseGracePeriod = TimeSpan.FromSeconds(10);
     private static readonly Lazy<string> DummyPasswordHash = new(() =>
         new PasswordHasher<ApplicationUser>().HashPassword(new ApplicationUser { FullName = string.Empty }, Guid.NewGuid().ToString()));
@@ -138,6 +145,229 @@ public class UserRepository(
             currentSessionId,
             cancellationToken);
     }
+
+    public async Task<PagedResult<UserWithRole>> GetPagedAsync(
+        bool? isActive,
+        string? role,
+        string? search,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken)
+    {
+        var query =
+            from user in db.Users.AsNoTracking()
+            join userRole in db.UserRoles on user.Id equals userRole.UserId
+            join identityRole in db.Roles on userRole.RoleId equals identityRole.Id
+            select new { User = user, Role = identityRole.Name ?? string.Empty };
+
+        if (isActive is not null)
+        {
+            query = query.Where(x => x.User.IsActive == isActive);
+        }
+
+        if (!string.IsNullOrWhiteSpace(role))
+        {
+            query = query.Where(x => x.Role == role);
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            string term = search.Trim();
+            query = query.Where(x => (x.User.UserName ?? string.Empty).Contains(term) || x.User.FullName.Contains(term));
+        }
+
+        int totalCount = await query.CountAsync(cancellationToken);
+        var items = await query
+            .OrderBy(x => x.User.FullName)
+            .ThenBy(x => x.User.UserName)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        return new PagedResult<UserWithRole>(
+            items.Select(x => new UserWithRole(x.User, x.Role)).ToList(),
+            page,
+            pageSize,
+            totalCount);
+    }
+
+    public async Task<UserWithRole> GetByIdAsync(string userId, CancellationToken cancellationToken)
+    {
+        ApplicationUser user = await FindOrThrowAsync(userId);
+        return new UserWithRole(user, await GetRoleAsync(user));
+    }
+
+    public async Task<(UserWithRole User, string TemporaryPassword)> CreateAsync(
+        string username,
+        string fullName,
+        string role,
+        CancellationToken cancellationToken)
+    {
+        ApplicationUser user = new() { UserName = username, FullName = fullName.Trim(), MustChangePassword = true };
+        string temporaryPassword = GenerateTemporaryPassword();
+        user.PasswordHash = userManager.PasswordHasher.HashPassword(user, temporaryPassword);
+
+        string roleId = await db.Roles
+            .Where(r => r.Name == role)
+            .Select(r => r.Id)
+            .SingleAsync(cancellationToken);
+        db.UserRoles.Add(new IdentityUserRole<string> { UserId = user.Id, RoleId = roleId });
+
+        EnsureSucceeded(await userManager.CreateAsync(user), "username");
+
+        return (new UserWithRole(user, role), temporaryPassword);
+    }
+
+    public async Task<UserWithRole> UpdateAsync(
+        string userId,
+        string fullName,
+        string role,
+        string actorId,
+        CancellationToken cancellationToken)
+    {
+        ApplicationUser user = await FindOrThrowAsync(userId);
+        string currentRole = await GetRoleAsync(user);
+        bool roleChanged = currentRole != role;
+
+        if (roleChanged)
+        {
+            if (user.Id == actorId)
+            {
+                throw new ApiException(StatusCodes.Status400BadRequest, "No puedes cambiar tu propio rol");
+            }
+
+            if (currentRole == RoleNames.Admin && user.IsActive)
+            {
+                await EnsureAnotherActiveAdminAsync(user.Id, cancellationToken);
+            }
+        }
+
+        user.FullName = fullName.Trim();
+
+        await using IDbContextTransaction transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+
+        EnsureSucceeded(await userManager.UpdateAsync(user), "fullName");
+        if (roleChanged)
+        {
+            EnsureSucceeded(await userManager.RemoveFromRoleAsync(user, currentRole), "role");
+            EnsureSucceeded(await userManager.AddToRoleAsync(user, role), "role");
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+
+        if (roleChanged)
+        {
+            await sessionRepository.RevokeAllForUserAsync(user.Id, RevocationReasons.RoleChanged, null, cancellationToken);
+        }
+
+        return new UserWithRole(user, role);
+    }
+
+    public async Task DeactivateAsync(string userId, string actorId, CancellationToken cancellationToken)
+    {
+        if (userId == actorId)
+        {
+            throw new ApiException(StatusCodes.Status400BadRequest, "No puedes desactivarte a ti mismo");
+        }
+
+        ApplicationUser user = await FindOrThrowAsync(userId);
+        if (!user.IsActive)
+        {
+            throw new ApiException(StatusCodes.Status409Conflict, "El usuario ya está desactivado");
+        }
+
+        if (await GetRoleAsync(user) == RoleNames.Admin)
+        {
+            await EnsureAnotherActiveAdminAsync(user.Id, cancellationToken);
+        }
+
+        user.IsActive = false;
+        user.DeactivatedAt = timeProvider.GetUtcNow();
+        user.DeactivatedById = actorId;
+        EnsureSucceeded(await userManager.UpdateAsync(user), "id");
+
+        await sessionRepository.RevokeAllForUserAsync(user.Id, RevocationReasons.UserDeactivated, null, cancellationToken);
+    }
+
+    public async Task<string> ReactivateAsync(string userId, CancellationToken cancellationToken)
+    {
+        ApplicationUser user = await FindOrThrowAsync(userId);
+        if (user.IsActive)
+        {
+            throw new ApiException(StatusCodes.Status409Conflict, "El usuario ya está activo");
+        }
+
+        user.IsActive = true;
+        user.DeactivatedAt = null;
+        user.DeactivatedById = null;
+
+        return await SetTemporaryPasswordAsync(user, cancellationToken);
+    }
+
+    public async Task<string> ResetPasswordAsync(string userId, CancellationToken cancellationToken)
+    {
+        ApplicationUser user = await FindOrThrowAsync(userId);
+        return await SetTemporaryPasswordAsync(user, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<Session>> GetActiveSessionsAsync(string userId, CancellationToken cancellationToken)
+    {
+        ApplicationUser user = await FindOrThrowAsync(userId);
+        return await sessionRepository.GetActiveForUserAsync(user.Id, cancellationToken);
+    }
+
+    public async Task RevokeSessionsAsync(string userId, CancellationToken cancellationToken)
+    {
+        ApplicationUser user = await FindOrThrowAsync(userId);
+        await sessionRepository.RevokeAllForUserAsync(user.Id, RevocationReasons.RevokedByAdmin, null, cancellationToken);
+    }
+
+    private async Task<string> SetTemporaryPasswordAsync(ApplicationUser user, CancellationToken cancellationToken)
+    {
+        string temporaryPassword = GenerateTemporaryPassword();
+        user.PasswordHash = userManager.PasswordHasher.HashPassword(user, temporaryPassword);
+        user.MustChangePassword = true;
+        user.AccessFailedCount = 0;
+        user.LockoutEnd = null;
+
+        EnsureSucceeded(await userManager.UpdateSecurityStampAsync(user), "id");
+        await sessionRepository.RevokeAllForUserAsync(user.Id, RevocationReasons.PasswordReset, null, cancellationToken);
+
+        return temporaryPassword;
+    }
+
+    private async Task EnsureAnotherActiveAdminAsync(string excludedUserId, CancellationToken cancellationToken)
+    {
+        bool anotherAdminExists = await (
+            from user in db.Users
+            join userRole in db.UserRoles on user.Id equals userRole.UserId
+            join identityRole in db.Roles on userRole.RoleId equals identityRole.Id
+            where identityRole.Name == RoleNames.Admin && user.IsActive && user.Id != excludedUserId
+            select user.Id).AnyAsync(cancellationToken);
+
+        if (!anotherAdminExists)
+        {
+            throw new ApiException(StatusCodes.Status409Conflict, "Debe existir al menos un administrador activo");
+        }
+    }
+
+    private async Task<ApplicationUser> FindOrThrowAsync(string userId) =>
+        await userManager.FindByIdAsync(userId)
+        ?? throw new ApiException(StatusCodes.Status404NotFound, "Usuario no encontrado");
+
+    private static void EnsureSucceeded(IdentityResult result, string field)
+    {
+        if (!result.Succeeded)
+        {
+            throw new ApiException(
+                StatusCodes.Status400BadRequest,
+                "Hay errores de validación",
+                new Dictionary<string, string[]> { [field] = result.Errors.Select(e => e.Description).ToArray() });
+        }
+    }
+
+    private static string GenerateTemporaryPassword() =>
+        RandomNumberGenerator.GetString(TemporaryPasswordAlphabet, TemporaryPasswordLength);
 
     private async Task<string> GetRoleAsync(ApplicationUser user) =>
         (await userManager.GetRolesAsync(user)).FirstOrDefault()
