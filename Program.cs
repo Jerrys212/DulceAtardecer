@@ -27,7 +27,10 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<AuditableEntityInterceptor>();
 builder.Services.AddDbContext<ApplicationDbContext>((serviceProvider, options) => options
     .UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"))
-    .AddInterceptors(serviceProvider.GetRequiredService<AuditableEntityInterceptor>()));
+    .AddInterceptors(serviceProvider.GetRequiredService<AuditableEntityInterceptor>())
+    .UseSeeding((context, _) => DataSeeder.Seed(context, builder.Configuration))
+    .UseAsyncSeeding((context, _, cancellationToken) =>
+        DataSeeder.SeedAsync(context, builder.Configuration, cancellationToken)));
 
 builder.Services.AddOptions<ApiSettings>().BindConfiguration(ApiSettings.SectionName);
 builder.Services.AddOptions<SessionSettings>().BindConfiguration(SessionSettings.SectionName);
@@ -59,6 +62,7 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<IRevokedSessionCache, RevokedSessionCache>();
 builder.Services.AddHostedService<RevokedSessionCacheLoader>();
+builder.Services.AddHostedService<ExpiredSessionCleanupService>();
 builder.Services.AddScoped<ISessionRepository, SessionRepository>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IAuditRepository, AuditRepository>();
@@ -164,6 +168,12 @@ builder.Services.AddCors(options => options.AddPolicy(PolicyNames.AllowSpecificO
 MapsterConfig.RegisterMappings();
 
 var app = builder.Build();
+
+if (args.FirstOrDefault() == ResetAdminCommand.Name)
+{
+    Environment.ExitCode = await ResetAdminCommand.RunAsync(app.Services, args);
+    return;
+}
 
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseStatusCodePages(async context =>
