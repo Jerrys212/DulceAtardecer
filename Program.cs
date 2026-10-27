@@ -100,7 +100,7 @@ builder.Services.AddAuthorization();
 
 builder.Services.AddRouting(options => options.LowercaseUrls = true);
 
-builder.Services.AddControllers()
+builder.Services.AddControllers(options => options.Filters.Add<MustChangePasswordFilter>())
     .ConfigureApiBehaviorOptions(options =>
     {
         options.SuppressMapClientErrors = true;
