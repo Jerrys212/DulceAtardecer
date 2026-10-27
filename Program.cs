@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Asp.Versioning;
 using DulceAtardecer.Constants;
@@ -137,7 +138,9 @@ builder.Services.AddControllers(options =>
     {
         options.Filters.Add<MustChangePasswordFilter>();
         options.Filters.Add<ApiResponseStatusCodeFilter>();
+        options.Filters.Add(new ProducesAttribute("application/json"));
     })
+    .AddJsonOptions(options => options.JsonSerializerOptions.NumberHandling = JsonNumberHandling.Strict)
     .ConfigureApiBehaviorOptions(options =>
     {
         options.SuppressMapClientErrors = true;
@@ -183,7 +186,8 @@ builder.Services.AddApiVersioning(options =>
         options.SubstituteApiVersionInUrl = true;
     });
 
-builder.Services.AddOpenApi("v1");
+builder.Services.ConfigureHttpJsonOptions(options => options.SerializerOptions.NumberHandling = JsonNumberHandling.Strict);
+builder.Services.AddOpenApi("v1", options => options.AddOperationTransformer<ApiResponseStatusExampleTransformer>());
 
 string[] allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 builder.Services.AddCors(options => options.AddPolicy(PolicyNames.AllowSpecificOrigin, policy => policy
