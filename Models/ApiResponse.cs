@@ -1,19 +1,37 @@
 namespace DulceAtardecer.Models;
 
-public record ApiResponse<T>(
-    bool Success,
-    int StatusCode,
-    string? Message,
-    T? Data,
-    IDictionary<string, string[]>? Errors = null);
+public interface IApiResponse
+{
+    int StatusCode { get; set; }
+}
+
+public class ApiResponse<T> : IApiResponse
+{
+    public bool Success { get; init; }
+    public int StatusCode { get; set; }
+    public string? Message { get; init; }
+    public T? Data { get; init; }
+    public IReadOnlyList<string> Errors { get; init; } = [];
+}
 
 public static class ApiResponse
 {
-    public static ApiResponse<T> Ok<T>(T data, string? message = null, int statusCode = StatusCodes.Status200OK) =>
-        new(true, statusCode, message, data);
+    public static ApiResponse<T> Ok<T>(T data, string? message = null) =>
+        new() { Success = true, StatusCode = StatusCodes.Status200OK, Message = message, Data = data };
 
-    public static ApiResponse<object> Fail(int statusCode, string? message = null, IDictionary<string, string[]>? errors = null) =>
-        new(false, statusCode, message ?? DefaultMessage(statusCode), null, errors);
+    public static ApiResponse<object> Fail(int statusCode, string? message = null, IEnumerable<string>? errors = null)
+    {
+        string resolvedMessage = message ?? DefaultMessage(statusCode);
+        List<string> resolvedErrors = errors?.Where(error => !string.IsNullOrWhiteSpace(error)).ToList() ?? [];
+
+        return new()
+        {
+            Success = false,
+            StatusCode = statusCode,
+            Message = resolvedMessage,
+            Errors = resolvedErrors.Count > 0 ? resolvedErrors : [resolvedMessage],
+        };
+    }
 
     public static string DefaultMessage(int statusCode) => statusCode switch
     {

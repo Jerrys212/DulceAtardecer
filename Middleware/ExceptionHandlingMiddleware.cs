@@ -2,7 +2,10 @@ using DulceAtardecer.Models;
 
 namespace DulceAtardecer.Middleware;
 
-public class ExceptionHandlingMiddleware(RequestDelegate next, ILogger<ExceptionHandlingMiddleware> logger)
+public class ExceptionHandlingMiddleware(
+    RequestDelegate next,
+    ILogger<ExceptionHandlingMiddleware> logger,
+    IHostEnvironment environment)
 {
     public async Task InvokeAsync(HttpContext context)
     {
@@ -20,7 +23,11 @@ public class ExceptionHandlingMiddleware(RequestDelegate next, ILogger<Exception
         catch (Exception ex)
         {
             logger.LogError(ex, "Unhandled exception on {Method} {Path}", context.Request.Method, context.Request.Path);
-            await WriteAsync(context, ApiResponse.Fail(StatusCodes.Status500InternalServerError));
+
+            IEnumerable<string>? errors = environment.IsDevelopment()
+                ? [$"{ex.GetType().Name}: {ex.Message}"]
+                : null;
+            await WriteAsync(context, ApiResponse.Fail(StatusCodes.Status500InternalServerError, errors: errors));
         }
     }
 

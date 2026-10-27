@@ -64,7 +64,7 @@ public class UsersController(IUserRepository userRepository) : ControllerBase
         return CreatedAtAction(
             nameof(GetById),
             new { id = userDto.Id, version = "1" },
-            ApiResponse.Ok(new CreatedUserDto(userDto, temporaryPassword), "Usuario creado", StatusCodes.Status201Created));
+            ApiResponse.Ok(new CreatedUserDto(userDto, temporaryPassword), "Usuario creado"));
     }
 
     [HttpPut("{id}")]

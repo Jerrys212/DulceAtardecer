@@ -154,7 +154,7 @@ public class UserRepository(
             throw new ApiException(
                 StatusCodes.Status400BadRequest,
                 "Hay errores de validación",
-                new Dictionary<string, string[]> { ["currentPassword"] = ["La contraseña actual es incorrecta"] });
+                ["La contraseña actual es incorrecta"]);
         }
 
         user.MustChangePassword = false;
@@ -164,7 +164,7 @@ public class UserRepository(
             throw new ApiException(
                 StatusCodes.Status400BadRequest,
                 "Hay errores de validación",
-                new Dictionary<string, string[]> { ["newPassword"] = result.Errors.Select(e => e.Description).ToArray() });
+                result.Errors.Select(e => e.Description));
         }
 
         int revokedSessions = await sessionRepository.RevokeAllForUserAsync(
@@ -248,7 +248,7 @@ public class UserRepository(
             .SingleAsync(cancellationToken);
         db.UserRoles.Add(new IdentityUserRole<string> { UserId = user.Id, RoleId = roleId });
 
-        EnsureSucceeded(await userManager.CreateAsync(user), "username");
+        EnsureSucceeded(await userManager.CreateAsync(user));
 
         await auditRepository.LogAsync(new AuditEntry(AuditActions.UserCreated)
         {
@@ -289,11 +289,11 @@ public class UserRepository(
 
         await using IDbContextTransaction transaction = await db.Database.BeginTransactionAsync(cancellationToken);
 
-        EnsureSucceeded(await userManager.UpdateAsync(user), "fullName");
+        EnsureSucceeded(await userManager.UpdateAsync(user));
         if (roleChanged)
         {
-            EnsureSucceeded(await userManager.RemoveFromRoleAsync(user, currentRole), "role");
-            EnsureSucceeded(await userManager.AddToRoleAsync(user, role), "role");
+            EnsureSucceeded(await userManager.RemoveFromRoleAsync(user, currentRole));
+            EnsureSucceeded(await userManager.AddToRoleAsync(user, role));
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -334,7 +334,7 @@ public class UserRepository(
         user.IsActive = false;
         user.DeactivatedAt = timeProvider.GetUtcNow();
         user.DeactivatedById = actorId;
-        EnsureSucceeded(await userManager.UpdateAsync(user), "id");
+        EnsureSucceeded(await userManager.UpdateAsync(user));
 
         int revokedSessions = await sessionRepository.RevokeAllForUserAsync(
             user.Id,
@@ -418,7 +418,7 @@ public class UserRepository(
         user.AccessFailedCount = 0;
         user.LockoutEnd = null;
 
-        EnsureSucceeded(await userManager.UpdateSecurityStampAsync(user), "id");
+        EnsureSucceeded(await userManager.UpdateSecurityStampAsync(user));
         await sessionRepository.RevokeAllForUserAsync(user.Id, RevocationReasons.PasswordReset, null, cancellationToken);
 
         return temporaryPassword;
@@ -443,14 +443,14 @@ public class UserRepository(
         await userManager.FindByIdAsync(userId)
         ?? throw new ApiException(StatusCodes.Status404NotFound, "Usuario no encontrado");
 
-    private static void EnsureSucceeded(IdentityResult result, string field)
+    private static void EnsureSucceeded(IdentityResult result)
     {
         if (!result.Succeeded)
         {
             throw new ApiException(
                 StatusCodes.Status400BadRequest,
                 "Hay errores de validación",
-                new Dictionary<string, string[]> { [field] = result.Errors.Select(e => e.Description).ToArray() });
+                result.Errors.Select(e => e.Description));
         }
     }
 

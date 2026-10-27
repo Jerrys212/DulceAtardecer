@@ -105,10 +105,26 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
                 if (!Guid.TryParse(sessionId, out Guid parsedSessionId) || revokedSessions.IsRevoked(parsedSessionId))
                 {
-                    context.Fail("Session revoked");
+                    context.Fail(AuthFailures.SessionRevoked);
                 }
 
                 return Task.CompletedTask;
+            },
+            OnChallenge = async context =>
+            {
+                context.HandleResponse();
+
+                string reason = context.AuthenticateFailure switch
+                {
+                    null => "No se envió un token de acceso",
+                    SecurityTokenExpiredException => "El token de acceso expiró",
+                    { Message: AuthFailures.SessionRevoked } => "La sesión fue cerrada o revocada",
+                    _ => "El token de acceso no es válido",
+                };
+
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                await context.Response.WriteAsJsonAsync(
+                    ApiResponse.Fail(StatusCodes.Status401Unauthorized, errors: [reason]));
             },
         };
     });
@@ -117,26 +133,37 @@ builder.Services.AddAuthorization();
 
 builder.Services.AddRouting(options => options.LowercaseUrls = true);
 
-builder.Services.AddControllers(options => options.Filters.Add<MustChangePasswordFilter>())
+builder.Services.AddControllers(options =>
+    {
+        options.Filters.Add<MustChangePasswordFilter>();
+        options.Filters.Add<ApiResponseStatusCodeFilter>();
+    })
     .ConfigureApiBehaviorOptions(options =>
     {
         options.SuppressMapClientErrors = true;
         options.InvalidModelStateResponseFactory = context =>
         {
-            if (context.ModelState.Keys.Any(key => key.StartsWith('$')))
+            List<string> jsonErrors = context.ModelState.Keys
+                .Where(key => key.StartsWith('$'))
+                .Select(key => key == "$"
+                    ? "El cuerpo de la solicitud no es un JSON válido"
+                    : $"El campo '{key.TrimStart('$', '.')}' tiene un tipo o formato inválido")
+                .ToList();
+
+            if (jsonErrors.Count > 0)
             {
                 return new BadRequestObjectResult(ApiResponse.Fail(
                     StatusCodes.Status400BadRequest,
-                    "El cuerpo de la solicitud no tiene un formato JSON válido"));
+                    "El cuerpo de la solicitud no tiene un formato JSON válido",
+                    jsonErrors));
             }
 
-            Dictionary<string, string[]> errors = context.ModelState
+            List<string> errors = context.ModelState
                 .Where(entry => entry.Value is { Errors.Count: > 0 })
-                .ToDictionary(
-                    entry => JsonNamingPolicy.CamelCase.ConvertName(entry.Key),
-                    entry => entry.Value?.Errors
-                        .Select(error => string.IsNullOrEmpty(error.ErrorMessage) ? "Valor inválido" : error.ErrorMessage)
-                        .ToArray() ?? []);
+                .SelectMany(entry => entry.Value?.Errors.Select(error => string.IsNullOrEmpty(error.ErrorMessage)
+                    ? $"El campo '{JsonNamingPolicy.CamelCase.ConvertName(entry.Key)}' tiene un valor inválido"
+                    : error.ErrorMessage) ?? [])
+                .ToList();
 
             return new BadRequestObjectResult(
                 ApiResponse.Fail(StatusCodes.Status400BadRequest, "Hay errores de validación", errors));
