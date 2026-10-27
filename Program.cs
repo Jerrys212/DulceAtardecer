@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
+using System.Threading.RateLimiting;
 using Asp.Versioning;
 using DulceAtardecer.Constants;
 using DulceAtardecer.Data;
@@ -51,12 +52,23 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
         options.Lockout.AllowedForNewUsers = true;
     })
     .AddRoles<IdentityRole>()
-    .AddEntityFrameworkStores<ApplicationDbContext>();
+    .AddEntityFrameworkStores<ApplicationDbContext>()
+    .AddErrorDescriber<SpanishIdentityErrorDescriber>()
+    .AddPasswordValidator<UsernameAsPasswordValidator>();
 
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<IRevokedSessionCache, RevokedSessionCache>();
 builder.Services.AddHostedService<RevokedSessionCacheLoader>();
 builder.Services.AddScoped<ISessionRepository, SessionRepository>();
+builder.Services.AddScoped<IUserRepository, UserRepository>();
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy(PolicyNames.LoginRateLimit, httpContext => RateLimitPartition.GetFixedWindowLimiter(
+        httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1) }));
+});
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -168,6 +180,7 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.UseCors(PolicyNames.AllowSpecificOrigin);
 
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
