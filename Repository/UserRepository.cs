@@ -18,6 +18,7 @@ public class UserRepository(
     ApplicationDbContext db,
     UserManager<ApplicationUser> userManager,
     ISessionRepository sessionRepository,
+    IAuditRepository auditRepository,
     IOptions<ApiSettings> apiSettings,
     TimeProvider timeProvider) : IUserRepository
 {
@@ -40,18 +41,24 @@ public class UserRepository(
         if (user is null)
         {
             userManager.PasswordHasher.VerifyHashedPassword(new ApplicationUser { FullName = string.Empty }, DummyPasswordHash.Value, password);
-            throw InvalidCredentials();
+            throw await LoginFailedAsync(username, "unknown_user", cancellationToken);
         }
 
-        if (!user.IsActive || await userManager.IsLockedOutAsync(user))
+        if (!user.IsActive)
         {
-            throw InvalidCredentials();
+            throw await LoginFailedAsync(username, "inactive", cancellationToken);
+        }
+
+        if (await userManager.IsLockedOutAsync(user))
+        {
+            throw await LoginFailedAsync(username, "locked_out", cancellationToken);
         }
 
         if (!await userManager.CheckPasswordAsync(user, password))
         {
             await userManager.AccessFailedAsync(user);
-            throw InvalidCredentials();
+            string reason = await userManager.IsLockedOutAsync(user) ? "bad_password_locked_out" : "bad_password";
+            throw await LoginFailedAsync(username, reason, cancellationToken);
         }
 
         await userManager.ResetAccessFailedCountAsync(user);
@@ -59,6 +66,13 @@ public class UserRepository(
         string role = await GetRoleAsync(user);
         (Session session, IssuedToken refreshToken) =
             await sessionRepository.CreateAsync(user.Id, userAgent, ipAddress, cancellationToken);
+
+        await auditRepository.LogAsync(new AuditEntry(AuditActions.LoginSucceeded)
+        {
+            UserId = user.Id,
+            EntityType = AuditEntry.SessionEntity,
+            EntityId = session.Id.ToString(),
+        }, cancellationToken);
 
         return new AuthResult(new UserWithRole(user, role), CreateAccessToken(user, role, session.Id), refreshToken);
     }
@@ -82,6 +96,13 @@ public class UserRepository(
             if (now - usedAt > RefreshReuseGracePeriod)
             {
                 await sessionRepository.RevokeAsync(session.Id, RevocationReasons.RefreshTokenReuse, cancellationToken);
+                await auditRepository.LogAsync(new AuditEntry(AuditActions.RefreshTokenReuse)
+                {
+                    UserId = session.UserId,
+                    EntityType = AuditEntry.SessionEntity,
+                    EntityId = session.Id.ToString(),
+                    Details = new { refreshTokenId = stored.Id, usedAt },
+                }, cancellationToken);
                 throw new ApiException(StatusCodes.Status401Unauthorized);
             }
         }
@@ -100,8 +121,15 @@ public class UserRepository(
         return new RefreshResult(CreateAccessToken(user, role, session.Id), rotatedToken);
     }
 
-    public Task LogoutAsync(Guid sessionId, CancellationToken cancellationToken) =>
-        sessionRepository.RevokeAsync(sessionId, RevocationReasons.Logout, cancellationToken);
+    public async Task LogoutAsync(Guid sessionId, CancellationToken cancellationToken)
+    {
+        await sessionRepository.RevokeAsync(sessionId, RevocationReasons.Logout, cancellationToken);
+        await auditRepository.LogAsync(new AuditEntry(AuditActions.Logout)
+        {
+            EntityType = AuditEntry.SessionEntity,
+            EntityId = sessionId.ToString(),
+        }, cancellationToken);
+    }
 
     public async Task<UserWithRole> GetCurrentAsync(string userId, CancellationToken cancellationToken)
     {
@@ -139,11 +167,18 @@ public class UserRepository(
                 new Dictionary<string, string[]> { ["newPassword"] = result.Errors.Select(e => e.Description).ToArray() });
         }
 
-        await sessionRepository.RevokeAllForUserAsync(
+        int revokedSessions = await sessionRepository.RevokeAllForUserAsync(
             user.Id,
             RevocationReasons.PasswordChanged,
             currentSessionId,
             cancellationToken);
+
+        await auditRepository.LogAsync(new AuditEntry(AuditActions.PasswordChanged)
+        {
+            EntityType = AuditEntry.UserEntity,
+            EntityId = user.Id,
+            Details = new { revokedSessions },
+        }, cancellationToken);
     }
 
     public async Task<PagedResult<UserWithRole>> GetPagedAsync(
@@ -215,6 +250,13 @@ public class UserRepository(
 
         EnsureSucceeded(await userManager.CreateAsync(user), "username");
 
+        await auditRepository.LogAsync(new AuditEntry(AuditActions.UserCreated)
+        {
+            EntityType = AuditEntry.UserEntity,
+            EntityId = user.Id,
+            Details = new { username, role },
+        }, cancellationToken);
+
         return (new UserWithRole(user, role), temporaryPassword);
     }
 
@@ -242,6 +284,7 @@ public class UserRepository(
             }
         }
 
+        string previousFullName = user.FullName;
         user.FullName = fullName.Trim();
 
         await using IDbContextTransaction transaction = await db.Database.BeginTransactionAsync(cancellationToken);
@@ -259,6 +302,13 @@ public class UserRepository(
         {
             await sessionRepository.RevokeAllForUserAsync(user.Id, RevocationReasons.RoleChanged, null, cancellationToken);
         }
+
+        await auditRepository.LogAsync(new AuditEntry(roleChanged ? AuditActions.UserRoleChanged : AuditActions.UserUpdated)
+        {
+            EntityType = AuditEntry.UserEntity,
+            EntityId = user.Id,
+            Details = new { previousFullName, fullName = user.FullName, previousRole = currentRole, role },
+        }, cancellationToken);
 
         return new UserWithRole(user, role);
     }
@@ -286,7 +336,18 @@ public class UserRepository(
         user.DeactivatedById = actorId;
         EnsureSucceeded(await userManager.UpdateAsync(user), "id");
 
-        await sessionRepository.RevokeAllForUserAsync(user.Id, RevocationReasons.UserDeactivated, null, cancellationToken);
+        int revokedSessions = await sessionRepository.RevokeAllForUserAsync(
+            user.Id,
+            RevocationReasons.UserDeactivated,
+            null,
+            cancellationToken);
+
+        await auditRepository.LogAsync(new AuditEntry(AuditActions.UserDeactivated)
+        {
+            EntityType = AuditEntry.UserEntity,
+            EntityId = user.Id,
+            Details = new { revokedSessions },
+        }, cancellationToken);
     }
 
     public async Task<string> ReactivateAsync(string userId, CancellationToken cancellationToken)
@@ -301,13 +362,29 @@ public class UserRepository(
         user.DeactivatedAt = null;
         user.DeactivatedById = null;
 
-        return await SetTemporaryPasswordAsync(user, cancellationToken);
+        string temporaryPassword = await SetTemporaryPasswordAsync(user, cancellationToken);
+
+        await auditRepository.LogAsync(new AuditEntry(AuditActions.UserReactivated)
+        {
+            EntityType = AuditEntry.UserEntity,
+            EntityId = user.Id,
+        }, cancellationToken);
+
+        return temporaryPassword;
     }
 
     public async Task<string> ResetPasswordAsync(string userId, CancellationToken cancellationToken)
     {
         ApplicationUser user = await FindOrThrowAsync(userId);
-        return await SetTemporaryPasswordAsync(user, cancellationToken);
+        string temporaryPassword = await SetTemporaryPasswordAsync(user, cancellationToken);
+
+        await auditRepository.LogAsync(new AuditEntry(AuditActions.PasswordReset)
+        {
+            EntityType = AuditEntry.UserEntity,
+            EntityId = user.Id,
+        }, cancellationToken);
+
+        return temporaryPassword;
     }
 
     public async Task<IReadOnlyList<Session>> GetActiveSessionsAsync(string userId, CancellationToken cancellationToken)
@@ -319,7 +396,18 @@ public class UserRepository(
     public async Task RevokeSessionsAsync(string userId, CancellationToken cancellationToken)
     {
         ApplicationUser user = await FindOrThrowAsync(userId);
-        await sessionRepository.RevokeAllForUserAsync(user.Id, RevocationReasons.RevokedByAdmin, null, cancellationToken);
+        int revokedSessions = await sessionRepository.RevokeAllForUserAsync(
+            user.Id,
+            RevocationReasons.RevokedByAdmin,
+            null,
+            cancellationToken);
+
+        await auditRepository.LogAsync(new AuditEntry(AuditActions.SessionsRevoked)
+        {
+            EntityType = AuditEntry.UserEntity,
+            EntityId = user.Id,
+            Details = new { revokedSessions },
+        }, cancellationToken);
     }
 
     private async Task<string> SetTemporaryPasswordAsync(ApplicationUser user, CancellationToken cancellationToken)
@@ -408,6 +496,13 @@ public class UserRepository(
         return new IssuedToken(token, expiresAt);
     }
 
-    private static ApiException InvalidCredentials() =>
-        new(StatusCodes.Status401Unauthorized, InvalidCredentialsMessage);
+    private async Task<ApiException> LoginFailedAsync(string username, string reason, CancellationToken cancellationToken)
+    {
+        await auditRepository.LogAsync(new AuditEntry(AuditActions.LoginFailed)
+        {
+            Details = new { username, reason },
+        }, cancellationToken);
+
+        return new ApiException(StatusCodes.Status401Unauthorized, InvalidCredentialsMessage);
+    }
 }
