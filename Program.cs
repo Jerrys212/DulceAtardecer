@@ -12,8 +12,12 @@ DotNetEnv.Env.TraversePath().Load();
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<AuditableEntityInterceptor>();
+builder.Services.AddDbContext<ApplicationDbContext>((serviceProvider, options) => options
+    .UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"))
+    .AddInterceptors(serviceProvider.GetRequiredService<AuditableEntityInterceptor>()));
 
 builder.Services.AddRouting(options => options.LowercaseUrls = true);
 
