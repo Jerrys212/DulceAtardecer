@@ -1,21 +1,22 @@
 services:
   dulceatardecer:
-    image: mcr.microsoft.com/mssql/server:2022-latest
+    image: postgres:16
     container_name: dulceatardecer
     restart: unless-stopped
     environment:
-      ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?Define MSSQL_SA_PASSWORD en .env}
+      POSTGRES_USER: ${POSTGRES_USER:-dulceatardecer}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en .env}
+      POSTGRES_DB: dulceatardecer
     ports:
-      - "127.0.0.1:${SQL_PORT:-1433}:1433"
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
     volumes:
-      - dulceatardecer_data:/var/opt/mssql
+      - dulceatardecer_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$${MSSQL_SA_PASSWORD}\" -C -Q 'SELECT 1' -b -o /dev/null"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d dulceatardecer"]
+      interval: 5s
       timeout: 5s
       retries: 12
-      start_period: 20s
+      start_period: 10s
 
   api:
     build:
@@ -30,7 +31,7 @@ services:
     environment: &api-environment
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
       ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
-      ConnectionStrings__DefaultConnection: "Server=dulceatardecer,1433;Database=DulceAtardecer;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True"
+      ConnectionStrings__DefaultConnection: "Host=dulceatardecer;Port=5432;Database=dulceatardecer;Username=${POSTGRES_USER:-dulceatardecer};Password=${POSTGRES_PASSWORD};Gss Encryption Mode=Disable"
       ApiSettings__SecretKey: ${ApiSettings__SecretKey:?Define ApiSettings__SecretKey en .env}
       InitialAdmin__Username: ${InitialAdmin__Username:-admin}
       InitialAdmin__Password: ${InitialAdmin__Password:?Define InitialAdmin__Password en .env}
