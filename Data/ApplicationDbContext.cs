@@ -26,6 +26,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
     public DbSet<Category> Categories => Set<Category>();
     public DbSet<Subcategory> Subcategories => Set<Subcategory>();
+    public DbSet<Extra> Extras => Set<Extra>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -96,6 +97,20 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             subcategory.Property(s => s.CreatedById).HasMaxLength(UserIdLength);
             subcategory.Property(s => s.UpdatedById).HasMaxLength(UserIdLength);
             subcategory.HasIndex(s => new { s.CategoryId, s.Name }).IsUnique();
+        });
+
+        builder.Entity<Extra>(extra =>
+        {
+            extra.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_Extras_Name_Length", NameLengthCheck);
+                t.HasCheckConstraint("CK_Extras_Price_Range", "\"Price\" BETWEEN 0 AND 9999.99");
+            });
+            extra.Property(e => e.Name).HasColumnType(CaseInsensitiveText);
+            extra.Property(e => e.Price).HasPrecision(18, 2);
+            extra.Property(e => e.CreatedById).HasMaxLength(UserIdLength);
+            extra.Property(e => e.UpdatedById).HasMaxLength(UserIdLength);
+            extra.HasIndex(e => e.Name).IsUnique();
         });
     }
 }

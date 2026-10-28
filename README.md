@@ -6,6 +6,7 @@ Módulos actuales:
 
 - **Usuarios, autenticación y sesiones**: inicio de sesión con JWT y refresh token rotativo, gestión de usuarios por el administrador, roles fijos (`Admin`, `Cashier`, `Kitchen`), revocación inmediata de sesiones y auditoría de eventos de seguridad.
 - **Categorías y subcategorías**: clasificación de productos en dos niveles. El administrador las crea, edita, activa y desactiva; el punto de venta consulta el árbol de lo disponible en `GET /api/v1/categories`.
+- **Extras**: catálogo global de agregados con precio (incluye IVA; puede ser 0). El administrador los gestiona; el punto de venta consulta los activos en `GET /api/v1/extras`.
 
 Próximos módulos: productos, ventas y cocina.
 
@@ -20,7 +21,7 @@ Próximos módulos: productos, ventas y cocina.
 
 ```
 Constants/      Nombres de roles, claims, políticas y acciones de auditoría
-Controllers/    AuthController, UsersController, CategoriesController
+Controllers/    AuthController, UsersController, CategoriesController, ExtrasController
 Data/           ApplicationDbContext, interceptor de auditoría, DataSeeder
 Mapping/        Configuración de Mapster
 Middleware/     Manejo global de errores y filtros
