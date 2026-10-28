@@ -60,5 +60,21 @@ public static class MapsterConfig
             .Map(dest => dest.CategoryId, src => src.Subcategory!.CategoryId)
             .Map(dest => dest.CategoryName, src => src.Subcategory!.Category!.Name)
             .Map(dest => dest.SubcategoryName, src => src.Subcategory!.Name);
+
+        TypeAdapterConfig<SaleItemExtraRequestDto, SaleLineExtra>.NewConfig()
+            .MapToConstructor(true);
+
+        TypeAdapterConfig<SaleItemRequestDto, SaleLine>.NewConfig()
+            .MapToConstructor(true);
+
+        TypeAdapterConfig<SaleItemExtra, SaleItemExtraDto>.NewConfig()
+            .MapToConstructor(true);
+
+        TypeAdapterConfig<SaleItem, SaleItemDto>.NewConfig()
+            .MapToConstructor(true);
+
+        TypeAdapterConfig<Sale, SaleDto>.NewConfig()
+            .MapToConstructor(true)
+            .Map(dest => dest.CashierName, src => src.Cashier!.FullName);
     }
 }

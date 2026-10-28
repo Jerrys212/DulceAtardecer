@@ -70,6 +70,7 @@ builder.Services.AddScoped<IAuditRepository, AuditRepository>();
 builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
 builder.Services.AddScoped<IExtraRepository, ExtraRepository>();
 builder.Services.AddScoped<IProductRepository, ProductRepository>();
+builder.Services.AddScoped<ISaleRepository, SaleRepository>();
 builder.Services.AddHealthChecks();
 builder.Services.AddRateLimiter(options =>
 {
@@ -201,7 +202,7 @@ string[] allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins"
 builder.Services.AddCors(options => options.AddPolicy(PolicyNames.AllowSpecificOrigin, policy => policy
     .WithOrigins(allowedOrigins)
     .WithMethods("GET", "POST", "PUT")
-    .WithHeaders("Authorization", "Content-Type", "X-Requested-With")
+    .WithHeaders("Authorization", "Content-Type", "X-Requested-With", "Idempotency-Key")
     .AllowCredentials()));
 
 MapsterConfig.RegisterMappings();

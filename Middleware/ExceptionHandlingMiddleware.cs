@@ -15,7 +15,7 @@ public class ExceptionHandlingMiddleware(
         }
         catch (ApiException ex)
         {
-            await WriteAsync(context, ApiResponse.Fail(ex.StatusCode, ex.Message, ex.Errors));
+            await WriteAsync(context, ApiResponse.Fail(ex.StatusCode, ex.Message, ex.Errors, ex.ResponseData));
         }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
         {
