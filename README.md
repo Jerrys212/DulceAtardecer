@@ -260,7 +260,33 @@ Si haces un push nuevo a un PR, se cancela la ejecución anterior de ese PR. Los
    command="/ruta/a/deploy.sh",restrict ssh-ed25519 AAAA... github-actions-deploy
    ```
 
-   El script hace lo mismo que la [actualización manual](#actualizar-a-una-nueva-versión): `git pull`, construir las imágenes, aplicar las migraciones y levantar la API.
+   El script hace la [actualización manual](#actualizar-a-una-nueva-versión) y comprueba que la API responda. Ejemplo para el `docker-compose.yml` de este repo (dale permisos con `chmod +x deploy.sh`):
+
+   ```bash
+   #!/usr/bin/env bash
+   set -euo pipefail
+   cd /ruta/a/DulceAtardecer
+
+   echo "==> Actualizando código"
+   git pull --ff-only origin main
+
+   echo "==> Construyendo y aplicando migraciones"
+   docker compose --profile tools build
+   docker compose run --rm migrations
+
+   echo "==> Levantando la API"
+   docker compose up -d api
+
+   echo "==> Limpiando imágenes viejas"
+   docker image prune -f
+
+   echo "==> Verificando que la API responde"
+   curl -fsS --retry 10 --retry-delay 3 --retry-all-errors https://api.tu-dominio.com/health
+   echo
+   echo "==> Despliegue completado"
+   ```
+
+   Si un paso falla (por ejemplo, una migración), el script se detiene, la API anterior sigue corriendo y el job `deploy` queda en rojo en GitHub.
 
 3. **Crea los secrets del repositorio** (Settings → Secrets and variables → Actions):
 
