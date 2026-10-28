@@ -69,6 +69,7 @@ builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IAuditRepository, AuditRepository>();
 builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
 builder.Services.AddScoped<IExtraRepository, ExtraRepository>();
+builder.Services.AddScoped<IProductRepository, ProductRepository>();
 builder.Services.AddHealthChecks();
 builder.Services.AddRateLimiter(options =>
 {

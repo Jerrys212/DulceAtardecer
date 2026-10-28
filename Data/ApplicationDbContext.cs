@@ -27,6 +27,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<Category> Categories => Set<Category>();
     public DbSet<Subcategory> Subcategories => Set<Subcategory>();
     public DbSet<Extra> Extras => Set<Extra>();
+    public DbSet<Product> Products => Set<Product>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -111,6 +112,25 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             extra.Property(e => e.CreatedById).HasMaxLength(UserIdLength);
             extra.Property(e => e.UpdatedById).HasMaxLength(UserIdLength);
             extra.HasIndex(e => e.Name).IsUnique();
+        });
+
+        builder.Entity<Product>(product =>
+        {
+            product.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_Products_Name_Length", "char_length(\"Name\") BETWEEN 2 AND 100");
+                t.HasCheckConstraint("CK_Products_Price_Range", "\"Price\" > 0 AND \"Price\" <= 9999.99");
+            });
+            product.Property(p => p.Name).HasColumnType(CaseInsensitiveText);
+            product.Property(p => p.Description).HasMaxLength(250);
+            product.Property(p => p.Price).HasPrecision(18, 2);
+            product.Property(p => p.CreatedById).HasMaxLength(UserIdLength);
+            product.Property(p => p.UpdatedById).HasMaxLength(UserIdLength);
+            product.HasIndex(p => p.Name).IsUnique();
+            product.HasOne(p => p.Subcategory)
+                .WithMany()
+                .HasForeignKey(p => p.SubcategoryId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
     }
 }
