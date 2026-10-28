@@ -19,7 +19,11 @@ public static class ApiResponse
     public static ApiResponse<T> Ok<T>(T data, string? message = null) =>
         new() { Success = true, StatusCode = StatusCodes.Status200OK, Message = message, Data = data };
 
-    public static ApiResponse<object> Fail(int statusCode, string? message = null, IEnumerable<string>? errors = null)
+    public static ApiResponse<object> Fail(
+        int statusCode,
+        string? message = null,
+        IEnumerable<string>? errors = null,
+        object? data = null)
     {
         string resolvedMessage = message ?? DefaultMessage(statusCode);
         List<string> resolvedErrors = errors?.Where(error => !string.IsNullOrWhiteSpace(error)).ToList() ?? [];
@@ -29,6 +33,7 @@ public static class ApiResponse
             Success = false,
             StatusCode = statusCode,
             Message = resolvedMessage,
+            Data = data,
             Errors = resolvedErrors.Count > 0 ? resolvedErrors : [resolvedMessage],
         };
     }
