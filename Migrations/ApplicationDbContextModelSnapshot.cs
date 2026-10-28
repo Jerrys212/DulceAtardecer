@@ -416,7 +416,11 @@ namespace DulceAtardecer.Migrations
                     b.HasIndex("CashierId", "IdempotencyKey")
                         .IsUnique();
 
+                    b.HasIndex("Status", "CancelledAt");
+
                     b.HasIndex("Status", "CreatedAt");
+
+                    b.HasIndex("Status", "PaidAt");
 
                     b.ToTable("Sales");
                 });
@@ -548,6 +552,8 @@ namespace DulceAtardecer.Migrations
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ModifiedAt");
 
                     b.HasIndex("SaleId");
 
