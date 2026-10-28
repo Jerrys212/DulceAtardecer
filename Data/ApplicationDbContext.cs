@@ -155,6 +155,8 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             sale.Property(s => s.Version).IsRowVersion();
             sale.HasIndex(s => new { s.CashierId, s.IdempotencyKey }).IsUnique();
             sale.HasIndex(s => new { s.Status, s.CreatedAt });
+            sale.HasIndex(s => new { s.Status, s.PaidAt });
+            sale.HasIndex(s => new { s.Status, s.CancelledAt });
             sale.HasOne(s => s.Cashier)
                 .WithMany()
                 .HasForeignKey(s => s.CashierId)
@@ -203,6 +205,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             modification.Property(m => m.PreviousTotal).HasPrecision(18, 2);
             modification.Property(m => m.NewTotal).HasPrecision(18, 2);
             modification.HasIndex(m => m.SaleId);
+            modification.HasIndex(m => m.ModifiedAt);
             modification.HasOne<Sale>()
                 .WithMany()
                 .HasForeignKey(m => m.SaleId)
