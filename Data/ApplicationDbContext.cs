@@ -11,6 +11,8 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
 {
     private const int UserIdLength = 450;
     private const int IpAddressLength = 45;
+    private const string CaseInsensitiveText = "citext";
+    private const string NameLengthCheck = "char_length(\"Name\") BETWEEN 2 AND 50";
 
     private static readonly IdentityRole[] SeedRoles =
     [
@@ -22,10 +24,14 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<Session> Sessions => Set<Session>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
+    public DbSet<Category> Categories => Set<Category>();
+    public DbSet<Subcategory> Subcategories => Set<Subcategory>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+
+        builder.HasPostgresExtension("citext");
 
         builder.Entity<ApplicationUser>(user =>
         {
@@ -68,6 +74,28 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             auditEvent.Property(e => e.IpAddress).HasMaxLength(IpAddressLength);
             auditEvent.HasIndex(e => e.OccurredAt);
             auditEvent.HasIndex(e => e.UserId);
+        });
+
+        builder.Entity<Category>(category =>
+        {
+            category.ToTable(t => t.HasCheckConstraint("CK_Categories_Name_Length", NameLengthCheck));
+            category.Property(c => c.Name).HasColumnType(CaseInsensitiveText);
+            category.Property(c => c.CreatedById).HasMaxLength(UserIdLength);
+            category.Property(c => c.UpdatedById).HasMaxLength(UserIdLength);
+            category.HasIndex(c => c.Name).IsUnique();
+            category.HasMany(c => c.Subcategories)
+                .WithOne(s => s.Category)
+                .HasForeignKey(s => s.CategoryId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<Subcategory>(subcategory =>
+        {
+            subcategory.ToTable(t => t.HasCheckConstraint("CK_Subcategories_Name_Length", NameLengthCheck));
+            subcategory.Property(s => s.Name).HasColumnType(CaseInsensitiveText);
+            subcategory.Property(s => s.CreatedById).HasMaxLength(UserIdLength);
+            subcategory.Property(s => s.UpdatedById).HasMaxLength(UserIdLength);
+            subcategory.HasIndex(s => new { s.CategoryId, s.Name }).IsUnique();
         });
     }
 }
