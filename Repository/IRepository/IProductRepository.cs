@@ -1,25 +1,25 @@
-using DulceAtardecer.Models.Dtos;
+using DulceAtardecer.Models;
 
 namespace DulceAtardecer.Repository.IRepository;
 
 public interface IProductRepository
 {
-    Task<IReadOnlyList<AvailableProductDto>> GetAvailableAsync(
+    Task<IReadOnlyList<Product>> GetAvailableAsync(
         Guid? categoryId,
         Guid? subcategoryId,
         string? search,
         CancellationToken cancellationToken);
 
-    Task<IReadOnlyList<ProductDto>> GetAllAsync(
+    Task<IReadOnlyList<Product>> GetAllAsync(
         Guid? categoryId,
         Guid? subcategoryId,
         string? search,
         bool? isActive,
         CancellationToken cancellationToken);
 
-    Task<ProductDto> GetByIdAsync(Guid id, CancellationToken cancellationToken);
+    Task<Product> GetByIdAsync(Guid id, CancellationToken cancellationToken);
 
-    Task<ProductDto> CreateAsync(
+    Task<Product> CreateAsync(
         string name,
         string? description,
         decimal price,
@@ -27,7 +27,7 @@ public interface IProductRepository
         Guid subcategoryId,
         CancellationToken cancellationToken);
 
-    Task<ProductDto> UpdateAsync(
+    Task<Product> UpdateAsync(
         Guid id,
         string name,
         string? description,

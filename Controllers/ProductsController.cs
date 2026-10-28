@@ -3,6 +3,7 @@ using DulceAtardecer.Constants;
 using DulceAtardecer.Models;
 using DulceAtardecer.Models.Dtos;
 using DulceAtardecer.Repository.IRepository;
+using Mapster;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -20,13 +21,13 @@ public class ProductsController(IProductRepository productRepository) : Controll
     [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> GetAvailable([FromQuery] ProductQueryDto query, CancellationToken cancellationToken)
     {
-        IReadOnlyList<AvailableProductDto> products = await productRepository.GetAvailableAsync(
+        IReadOnlyList<Product> products = await productRepository.GetAvailableAsync(
             query.CategoryId,
             query.SubcategoryId,
             query.Search,
             cancellationToken);
 
-        return Ok(ApiResponse.Ok(products));
+        return Ok(ApiResponse.Ok(products.Adapt<List<AvailableProductDto>>()));
     }
 
     [HttpGet("all")]
@@ -36,14 +37,14 @@ public class ProductsController(IProductRepository productRepository) : Controll
     [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetAll([FromQuery] ProductAdminQueryDto query, CancellationToken cancellationToken)
     {
-        IReadOnlyList<ProductDto> products = await productRepository.GetAllAsync(
+        IReadOnlyList<Product> products = await productRepository.GetAllAsync(
             query.CategoryId,
             query.SubcategoryId,
             query.Search,
             query.IsActive,
             cancellationToken);
 
-        return Ok(ApiResponse.Ok(products));
+        return Ok(ApiResponse.Ok(products.Adapt<List<ProductDto>>()));
     }
 
     [HttpGet("{id:guid}")]
@@ -53,9 +54,9 @@ public class ProductsController(IProductRepository productRepository) : Controll
     [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {
-        ProductDto product = await productRepository.GetByIdAsync(id, cancellationToken);
+        Product product = await productRepository.GetByIdAsync(id, cancellationToken);
 
-        return Ok(ApiResponse.Ok(product));
+        return Ok(ApiResponse.Ok(product.Adapt<ProductDto>()));
     }
 
     [HttpPost]
@@ -66,7 +67,7 @@ public class ProductsController(IProductRepository productRepository) : Controll
     [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Create(CreateProductDto request, CancellationToken cancellationToken)
     {
-        ProductDto product = await productRepository.CreateAsync(
+        Product product = await productRepository.CreateAsync(
             request.Name,
             request.Description,
             request.Price.GetValueOrDefault(),
@@ -77,7 +78,7 @@ public class ProductsController(IProductRepository productRepository) : Controll
         return CreatedAtAction(
             nameof(GetById),
             new { id = product.Id, version = "1" },
-            ApiResponse.Ok(product, "Producto creado"));
+            ApiResponse.Ok(product.Adapt<ProductDto>(), "Producto creado"));
     }
 
     [HttpPut("{id:guid}")]
@@ -89,7 +90,7 @@ public class ProductsController(IProductRepository productRepository) : Controll
     [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Update(Guid id, UpdateProductDto request, CancellationToken cancellationToken)
     {
-        ProductDto product = await productRepository.UpdateAsync(
+        Product product = await productRepository.UpdateAsync(
             id,
             request.Name,
             request.Description,
@@ -98,7 +99,7 @@ public class ProductsController(IProductRepository productRepository) : Controll
             request.SubcategoryId.GetValueOrDefault(),
             cancellationToken);
 
-        return Ok(ApiResponse.Ok(product, "Producto actualizado"));
+        return Ok(ApiResponse.Ok(product.Adapt<ProductDto>(), "Producto actualizado"));
     }
 
     [HttpPost("{id:guid}/activate")]

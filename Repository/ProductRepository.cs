@@ -1,8 +1,6 @@
 using DulceAtardecer.Data;
 using DulceAtardecer.Models;
-using DulceAtardecer.Models.Dtos;
 using DulceAtardecer.Repository.IRepository;
-using Mapster;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
@@ -16,27 +14,26 @@ public class ProductRepository(ApplicationDbContext db) : IProductRepository
     private const string SubcategoryUnavailableMessage = "La subcategoría seleccionada no está disponible";
     private const string LikeEscapeCharacter = @"\";
 
-    public async Task<IReadOnlyList<AvailableProductDto>> GetAvailableAsync(
+    public async Task<IReadOnlyList<Product>> GetAvailableAsync(
         Guid? categoryId,
         Guid? subcategoryId,
         string? search,
         CancellationToken cancellationToken) =>
-        await Filter(db.Products.AsNoTracking(), categoryId, subcategoryId, search)
+        await Filter(WithSubcategory(), categoryId, subcategoryId, search)
             .Where(p => p.IsActive && p.Subcategory!.IsActive && p.Subcategory.Category!.IsActive)
             .OrderBy(p => p.Subcategory!.Category!.Name)
             .ThenBy(p => p.Subcategory!.Name)
             .ThenBy(p => p.Name)
-            .ProjectToType<AvailableProductDto>()
             .ToListAsync(cancellationToken);
 
-    public async Task<IReadOnlyList<ProductDto>> GetAllAsync(
+    public async Task<IReadOnlyList<Product>> GetAllAsync(
         Guid? categoryId,
         Guid? subcategoryId,
         string? search,
         bool? isActive,
         CancellationToken cancellationToken)
     {
-        IQueryable<Product> query = Filter(db.Products.AsNoTracking(), categoryId, subcategoryId, search);
+        IQueryable<Product> query = Filter(WithSubcategory(), categoryId, subcategoryId, search);
 
         if (isActive is not null)
         {
@@ -47,19 +44,14 @@ public class ProductRepository(ApplicationDbContext db) : IProductRepository
             .OrderBy(p => p.Subcategory!.Category!.Name)
             .ThenBy(p => p.Subcategory!.Name)
             .ThenBy(p => p.Name)
-            .ProjectToType<ProductDto>()
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<ProductDto> GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
-        await db.Products
-            .AsNoTracking()
-            .Where(p => p.Id == id)
-            .ProjectToType<ProductDto>()
-            .SingleOrDefaultAsync(cancellationToken)
+    public async Task<Product> GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
+        await WithSubcategory().SingleOrDefaultAsync(p => p.Id == id, cancellationToken)
         ?? throw new ApiException(StatusCodes.Status404NotFound, NotFoundMessage);
 
-    public async Task<ProductDto> CreateAsync(
+    public async Task<Product> CreateAsync(
         string name,
         string? description,
         decimal price,
@@ -84,7 +76,7 @@ public class ProductRepository(ApplicationDbContext db) : IProductRepository
         return await GetByIdAsync(product.Id, cancellationToken);
     }
 
-    public async Task<ProductDto> UpdateAsync(
+    public async Task<Product> UpdateAsync(
         Guid id,
         string name,
         string? description,
@@ -124,6 +116,12 @@ public class ProductRepository(ApplicationDbContext db) : IProductRepository
 
         return true;
     }
+
+    private IQueryable<Product> WithSubcategory() =>
+        db.Products
+            .AsNoTracking()
+            .Include(p => p.Subcategory)
+            .ThenInclude(s => s!.Category);
 
     private static IQueryable<Product> Filter(
         IQueryable<Product> query,
