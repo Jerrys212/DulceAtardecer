@@ -266,6 +266,8 @@ Si haces un push nuevo a un PR, se cancela la ejecución anterior de ese PR. Los
 
    | Secret | Valor |
    | --- | --- |
+   | `VPS_HOST` | La IP o el dominio del VPS. |
+   | `VPS_USER` | El usuario de despliegue del paso 2. |
    | `VPS_SSH_KEY` | La llave privada completa (`deploy_key`). |
    | `VPS_KNOWN_HOSTS` | La salida de `ssh-keyscan <ip-del-vps>`, para que Actions verifique la identidad del servidor. |
 
