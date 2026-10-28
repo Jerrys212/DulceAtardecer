@@ -21,7 +21,7 @@ Este archivo guía a Claude Code cuando trabaja en este repositorio. Léelo por 
 - **Auth**: ASP.NET Core Identity + JWT (HMAC-SHA256)
 - **Versionado de API**: `Asp.Versioning.Mvc`, versionado por segmento de URL
 - **Docs**: Swagger / OpenAPI 3.1 nativo (`AddOpenApi()`), con docs separados por versión si aplica
-- **DB local**: PostgreSQL vía Docker Compose (`postgres:16`)
+- **DB**: PostgreSQL 16 existente (local o en el VPS); si no hay, `docker run` según el README
 
 > ✏️ Si el proyecto usa otra combinación (FluentValidation en vez de Data Annotations, Dapper en vez de EF Core, etc.) ajustalo acá — esta sección es la fuente de verdad del stack.
 
@@ -30,7 +30,6 @@ Este archivo guía a Claude Code cuando trabaja en este repositorio. Léelo por 
 Requiere el SDK/runtime de .NET 10 (el proyecto apunta a `net10.0`; si solo tenés un SDK más nuevo instalado, necesitás igual los runtime packs 10.x de `Microsoft.AspNetCore.App`/`Microsoft.NETCore.App` o `dotnet run`/`dotnet ef` van a fallar).
 
 ```bash
-docker compose up -d          # levanta PostgreSQL en localhost:5432
 dotnet restore
 dotnet ef database update     # aplica migraciones + corre el seeder (requiere `dotnet tool install --global dotnet-ef`)
 dotnet run                    # o `dotnet watch run`; Swagger en /swagger
@@ -46,34 +45,11 @@ dotnet ef migrations add <Nombre>
 
 **Siempre ejecutá `dotnet build` (y `dotnet test` si existe) antes de dar una tarea por terminada.**
 
-### 3.1 Docker Compose (si no existe)
+### 3.1 Base de datos y Docker Compose
 
-Si el repo todavía no tiene `docker-compose.yml`, crearlo con un servicio de **PostgreSQL** para desarrollo local, siguiendo esta convención:
-
-- El **nombre del servicio y del contenedor** (`container_name`) deben ser el **nombre de la carpeta raíz del proyecto** (no un genérico como `postgres` o `db`), para que sea identificable si hay varios proyectos corriendo Docker en la misma máquina.
-- Imagen `postgres:16`, puerto `5432:5432`, variables `POSTGRES_USER`, `POSTGRES_PASSWORD` y `POSTGRES_DB`.
-- La contraseña de PostgreSQL **nunca hardcodeada en texto plano en el `docker-compose.yml` committeado**: usar un archivo `.env` (agregado a `.gitignore`) con `POSTGRES_PASSWORD=...` y referenciarlo con `${POSTGRES_PASSWORD}`.
-- Agregar un volumen nombrado para persistir los datos entre reinicios (`<nombre-carpeta>_data:/var/lib/postgresql/data`).
-
-Ejemplo (reemplazando `<nombre-carpeta>` por el nombre real de la carpeta del proyecto):
-
-```yaml
-services:
-  <nombre-carpeta>:
-    image: postgres:16
-    container_name: <nombre-carpeta>
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: <nombre-carpeta>
-    ports:
-      - "5432:5432"
-    volumes:
-      - <nombre-carpeta>_data:/var/lib/postgresql/data
-
-volumes:
-  <nombre-carpeta>_data:
-```
+- PostgreSQL **no** forma parte del `docker-compose.yml`: el proyecto usa una instancia de PostgreSQL existente (local o en el VPS), con un usuario y una base propios (`dulceatardecer`) sin permisos sobre otras bases. Quien no tenga PostgreSQL lo levanta con el `docker run` documentado en el README.
+- El `docker-compose.yml` solo define `api` y `migrations` (perfil `tools`), que se unen a la red externa del contenedor de PostgreSQL (`DB_NETWORK`) y lo alcanzan por su nombre (`DB_HOST`). No volver a agregar un servicio de base de datos al compose.
+- Credenciales siempre desde `.env` (gitignored), nunca en texto plano en el compose.
 
 ## 4. Arquitectura
 

@@ -46,12 +46,39 @@ Todas las respuestas, incluidas las de error, tienen la misma forma:
 - `statusCode` siempre es igual al código HTTP de la respuesta.
 - `errors` siempre es un arreglo: vacío si todo salió bien y, si hubo error, con un mensaje por cada falla.
 
+## Base de datos (PostgreSQL)
+
+La API necesita PostgreSQL 16 con un usuario y una base propios. Elige la opción que te corresponda.
+
+### Opción A: ya tienes PostgreSQL
+
+Crea un usuario y una base solo para este proyecto, sin permisos sobre tus otras bases. Conéctate con un superusuario (si PostgreSQL corre en Docker: `docker exec -it <contenedor> psql -U <superusuario> -d postgres`) y ejecuta:
+
+```sql
+CREATE ROLE dulceatardecer LOGIN PASSWORD 'tu_password';
+CREATE DATABASE dulceatardecer OWNER dulceatardecer;
+REVOKE ALL ON DATABASE dulceatardecer FROM PUBLIC;
+```
+
+### Opción B: no tienes PostgreSQL
+
+Levántalo con Docker. La red `dulceatardecer_db` permite que la API en Docker lo encuentre después:
+
+```bash
+docker network create dulceatardecer_db
+docker run -d --name dulceatardecer-postgres --network dulceatardecer_db --restart unless-stopped \
+  -e POSTGRES_USER=dulceatardecer -e POSTGRES_PASSWORD=tu_password -e POSTGRES_DB=dulceatardecer \
+  -p 127.0.0.1:5432:5432 -v dulceatardecer_data:/var/lib/postgresql/data postgres:16
+```
+
+Queda en `localhost:5432` con el usuario y la base `dulceatardecer`.
+
 ## Desarrollo local
 
 ### Requisitos
 
 - [.NET SDK 10](https://dotnet.microsoft.com/download)
-- Docker
+- PostgreSQL 16 (ver [Base de datos](#base-de-datos-postgresql))
 - La herramienta de EF Core: `dotnet tool install --global dotnet-ef`
 
 ### Pasos
@@ -65,24 +92,17 @@ Todas las respuestas, incluidas las de error, tienen la misma forma:
    ```
 
    En `.env` completa:
-   - `POSTGRES_PASSWORD`: la contraseña de PostgreSQL.
-   - `ConnectionStrings__DefaultConnection`: con esa misma contraseña en `Password=`.
+   - `ConnectionStrings__DefaultConnection`: el host, puerto, usuario y contraseña de tu PostgreSQL.
    - `ApiSettings__SecretKey`: una clave aleatoria de al menos 32 bytes, por ejemplo `openssl rand -base64 48`.
    - `InitialAdmin__Password`: al menos 10 caracteres.
 
-2. **Levanta PostgreSQL** (queda en `localhost:5432`):
-
-   ```bash
-   docker compose up -d dulceatardecer
-   ```
-
-3. **Aplica las migraciones.** Esto crea la base de datos, los roles y el administrador inicial:
+2. **Aplica las migraciones.** Esto crea las tablas, los roles y el administrador inicial:
 
    ```bash
    dotnet ef database update
    ```
 
-4. **Corre la API:**
+3. **Corre la API:**
 
    ```bash
    dotnet run --launch-profile https
@@ -90,7 +110,7 @@ Todas las respuestas, incluidas las de error, tienen la misma forma:
 
    La documentación interactiva queda en `https://localhost:7201/swagger` (solo en Development).
 
-5. **Entra con el administrador inicial** (`InitialAdmin__Username` / `InitialAdmin__Password`). El sistema te pedirá cambiar la contraseña antes de permitir cualquier otra acción.
+4. **Entra con el administrador inicial** (`InitialAdmin__Username` / `InitialAdmin__Password`). El sistema te pedirá cambiar la contraseña antes de permitir cualquier otra acción.
 
 Para crear una migración después de cambiar el modelo:
 
@@ -116,44 +136,48 @@ Los endpoints de usuarios (`/api/v1/users`) son solo para el rol `Admin`.
 
 ## Despliegue en un VPS con Docker
 
-El `docker-compose.yml` define tres servicios:
+El `docker-compose.yml` no incluye PostgreSQL: la API se conecta a un contenedor de PostgreSQL que ya exista, uniéndose a su red de Docker.
 
 | Servicio | Qué hace |
 | --- | --- |
-| `dulceatardecer` | PostgreSQL 16 con un volumen persistente. Solo escucha en `127.0.0.1`. |
 | `api` | La API. Escucha en `127.0.0.1:8080` para quedar detrás de un reverse proxy con HTTPS. |
 | `migrations` | Aplica migraciones y crea el admin inicial. Solo corre cuando lo pides (perfil `tools`). |
 
 ### Pasos
 
-1. **Instala Docker y Docker Compose en el VPS, clona el repo y crea el `.env`** a partir de `.env.example`. En el VPS solo se usan:
-   - `POSTGRES_USER` y `POSTGRES_PASSWORD`
+1. **Prepara la base de datos** con la [opción A o B](#base-de-datos-postgresql).
+
+2. **Averigua el nombre y la red de tu contenedor de PostgreSQL** (si usaste la opción B son `dulceatardecer-postgres` y `dulceatardecer_db`, y puedes saltarte este paso):
+
+   ```bash
+   docker ps --format '{{.Names}}\t{{.Image}}'
+   docker inspect <contenedor> -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}'
+   ```
+
+3. **Clona el repo y crea el `.env`** a partir de `.env.example`. En el VPS solo se usan:
+   - `DB_HOST`: el nombre del contenedor de PostgreSQL.
+   - `DB_NETWORK`: su red de Docker.
+   - `DB_NAME`, `POSTGRES_USER` y `POSTGRES_PASSWORD`: la base, el usuario y la contraseña que creaste.
    - `ApiSettings__SecretKey`
    - `InitialAdmin__Username` e `InitialAdmin__Password`
    - `CORS_ALLOWED_ORIGIN`: la URL del frontend.
 
    Evita el carácter `$` en las contraseñas, porque Compose lo interpreta como variable.
 
-2. **Construye y levanta la base de datos:**
+4. **Construye las imágenes y aplica las migraciones.** Repite la migración cada vez que despliegues una versión con migraciones nuevas:
 
    ```bash
    docker compose --profile tools build
-   docker compose up -d dulceatardecer
-   ```
-
-3. **Aplica las migraciones.** Repítelo cada vez que despliegues una versión con migraciones nuevas:
-
-   ```bash
    docker compose run --rm migrations
    ```
 
-4. **Levanta la API:**
+5. **Levanta la API:**
 
    ```bash
    docker compose up -d api
    ```
 
-5. **Pon un reverse proxy con HTTPS delante del puerto 8080.** Es obligatorio, porque la cookie de refresh solo viaja por HTTPS. Ejemplo con [Caddy](https://caddyserver.com), que obtiene el certificado automáticamente:
+6. **Pon un reverse proxy con HTTPS delante del puerto 8080.** Es obligatorio, porque la cookie de refresh solo viaja por HTTPS. Ejemplo con [Caddy](https://caddyserver.com), que obtiene el certificado automáticamente:
 
    ```
    api.tu-dominio.com {
@@ -184,19 +208,17 @@ El comando imprime una contraseña temporal, cierra todas las sesiones de ese ad
 
 ### Respaldos
 
-Los datos viven en el volumen `dulceatardecer_data`. Para generar un respaldo en el formato comprimido de `pg_dump`:
+Para generar un respaldo en el formato comprimido de `pg_dump` (`<contenedor>` es tu contenedor de PostgreSQL):
 
 ```bash
-docker compose exec -T dulceatardecer pg_dump -U dulceatardecer -d dulceatardecer -Fc > backup.dump
+docker exec <contenedor> pg_dump -U dulceatardecer -d dulceatardecer -Fc > backup.dump
 ```
 
 Para restaurarlo (reemplaza los objetos que ya existan en la base):
 
 ```bash
-docker compose exec -T dulceatardecer pg_restore -U dulceatardecer -d dulceatardecer --clean --if-exists < backup.dump
+docker exec -i <contenedor> pg_restore -U dulceatardecer -d dulceatardecer --clean --if-exists < backup.dump
 ```
-
-Si cambiaste `POSTGRES_USER`, usa ese usuario en `-U`.
 
 ## Ramas y commits
 

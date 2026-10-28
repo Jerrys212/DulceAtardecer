@@ -1,23 +1,4 @@
 services:
-  dulceatardecer:
-    image: postgres:16
-    container_name: dulceatardecer
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-dulceatardecer}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en .env}
-      POSTGRES_DB: dulceatardecer
-    ports:
-      - "127.0.0.1:${DB_PORT:-5432}:5432"
-    volumes:
-      - dulceatardecer_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d dulceatardecer"]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-      start_period: 10s
-
   api:
     build:
       context: .
@@ -25,19 +6,19 @@ services:
     image: dulceatardecer-api
     container_name: dulceatardecer-api
     restart: unless-stopped
-    depends_on:
-      dulceatardecer:
-        condition: service_healthy
     environment: &api-environment
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
       ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
-      ConnectionStrings__DefaultConnection: "Host=dulceatardecer;Port=5432;Database=dulceatardecer;Username=${POSTGRES_USER:-dulceatardecer};Password=${POSTGRES_PASSWORD};Gss Encryption Mode=Disable"
+      ConnectionStrings__DefaultConnection: "Host=${DB_HOST:-dulceatardecer-postgres};Port=5432;Database=${DB_NAME:-dulceatardecer};Username=${POSTGRES_USER:-dulceatardecer};Password=${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en .env};Gss Encryption Mode=Disable"
       ApiSettings__SecretKey: ${ApiSettings__SecretKey:?Define ApiSettings__SecretKey en .env}
       InitialAdmin__Username: ${InitialAdmin__Username:-admin}
       InitialAdmin__Password: ${InitialAdmin__Password:?Define InitialAdmin__Password en .env}
       Cors__AllowedOrigins__0: ${CORS_ALLOWED_ORIGIN:-}
     ports:
       - "127.0.0.1:${API_PORT:-8080}:8080"
+    networks:
+      - default
+      - db
 
   migrations:
     build:
@@ -45,10 +26,11 @@ services:
       target: migrations
     image: dulceatardecer-migrations
     profiles: ["tools"]
-    depends_on:
-      dulceatardecer:
-        condition: service_healthy
     environment: *api-environment
+    networks:
+      - db
 
-volumes:
-  dulceatardecer_data:
+networks:
+  db:
+    name: ${DB_NETWORK:-dulceatardecer_db}
+    external: true
