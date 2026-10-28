@@ -25,6 +25,7 @@ public class UserRepository(
     private const string InvalidCredentialsMessage = "Usuario o contraseña incorrectos";
     private const string TemporaryPasswordAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
     private const int TemporaryPasswordLength = 8;
+    private const string LikeEscapeCharacter = @"\";
     private static readonly TimeSpan RefreshReuseGracePeriod = TimeSpan.FromSeconds(10);
     private static readonly Lazy<string> DummyPasswordHash = new(() =>
         new PasswordHasher<ApplicationUser>().HashPassword(new ApplicationUser { FullName = string.Empty }, Guid.NewGuid().ToString()));
@@ -208,7 +209,11 @@ public class UserRepository(
         if (!string.IsNullOrWhiteSpace(search))
         {
             string term = search.Trim();
-            query = query.Where(x => (x.User.UserName ?? string.Empty).Contains(term) || x.User.FullName.Contains(term));
+            string normalizedTerm = term.ToUpperInvariant();
+            string fullNamePattern = $"%{EscapeLikePattern(term)}%";
+            query = query.Where(x =>
+                (x.User.NormalizedUserName ?? string.Empty).Contains(normalizedTerm)
+                || EF.Functions.ILike(x.User.FullName, fullNamePattern, LikeEscapeCharacter));
         }
 
         int totalCount = await query.CountAsync(cancellationToken);
@@ -453,6 +458,9 @@ public class UserRepository(
                 result.Errors.Select(e => e.Description));
         }
     }
+
+    private static string EscapeLikePattern(string value) =>
+        value.Replace(@"\", @"\\").Replace("%", @"\%").Replace("_", @"\_");
 
     private static string GenerateTemporaryPassword() =>
         RandomNumberGenerator.GetString(TemporaryPasswordAlphabet, TemporaryPasswordLength);
