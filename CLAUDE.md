@@ -16,12 +16,12 @@ Este archivo guía a Claude Code cuando trabaja en este repositorio. Léelo por 
 - **Runtime**: .NET 10 (LTS, soportado hasta 2028)
 - **Lenguaje**: C# 14, `Nullable` habilitado
 - **Framework web**: ASP.NET Core 10 con **Controllers** (`ControllerBase`), no Minimal APIs
-- **ORM**: Entity Framework Core 10 + SQL Server (`ApplicationDbContext`)
+- **ORM**: Entity Framework Core 10 + PostgreSQL vía Npgsql (`ApplicationDbContext`)
 - **Mapeo DTO ↔ Entidad**: **Mapster** (no AutoMapper), configuración centralizada
 - **Auth**: ASP.NET Core Identity + JWT (HMAC-SHA256)
 - **Versionado de API**: `Asp.Versioning.Mvc`, versionado por segmento de URL
 - **Docs**: Swagger / OpenAPI 3.1 nativo (`AddOpenApi()`), con docs separados por versión si aplica
-- **DB local**: SQL Server vía Docker Compose (`mcr.microsoft.com/mssql/server:2022-latest`)
+- **DB**: PostgreSQL 16 existente (local o en el VPS); si no hay, `docker run` según el README
 
 > ✏️ Si el proyecto usa otra combinación (FluentValidation en vez de Data Annotations, Dapper en vez de EF Core, etc.) ajustalo acá — esta sección es la fuente de verdad del stack.
 
@@ -30,7 +30,6 @@ Este archivo guía a Claude Code cuando trabaja en este repositorio. Léelo por 
 Requiere el SDK/runtime de .NET 10 (el proyecto apunta a `net10.0`; si solo tenés un SDK más nuevo instalado, necesitás igual los runtime packs 10.x de `Microsoft.AspNetCore.App`/`Microsoft.NETCore.App` o `dotnet run`/`dotnet ef` van a fallar).
 
 ```bash
-docker compose up -d          # levanta SQL Server en localhost:1433
 dotnet restore
 dotnet ef database update     # aplica migraciones + corre el seeder (requiere `dotnet tool install --global dotnet-ef`)
 dotnet run                    # o `dotnet watch run`; Swagger en /swagger
@@ -46,33 +45,11 @@ dotnet ef migrations add <Nombre>
 
 **Siempre ejecutá `dotnet build` (y `dotnet test` si existe) antes de dar una tarea por terminada.**
 
-### 3.1 Docker Compose (si no existe)
+### 3.1 Base de datos y Docker Compose
 
-Si el repo todavía no tiene `docker-compose.yml`, crearlo con un servicio de **SQL Server** para desarrollo local, siguiendo esta convención:
-
-- El **nombre del servicio y del contenedor** (`container_name`) deben ser el **nombre de la carpeta raíz del proyecto** (no un genérico como `sqlserver` o `db`), para que sea identificable si hay varios proyectos corriendo Docker en la misma máquina.
-- Imagen `mcr.microsoft.com/mssql/server:2022-latest`, puerto `1433:1433`, variables `ACCEPT_EULA=Y` y `MSSQL_SA_PASSWORD` (o `SA_PASSWORD` según la versión de imagen).
-- La contraseña de `SA` **nunca hardcodeada en texto plano en el `docker-compose.yml` committeado**: usar un archivo `.env` (agregado a `.gitignore`) con `MSSQL_SA_PASSWORD=...` y referenciarlo con `${MSSQL_SA_PASSWORD}`.
-- Agregar un volumen nombrado para persistir los datos entre reinicios (`<nombre-carpeta>_data:/var/opt/mssql`).
-
-Ejemplo (reemplazando `<nombre-carpeta>` por el nombre real de la carpeta del proyecto):
-
-```yaml
-services:
-  <nombre-carpeta>:
-    image: mcr.microsoft.com/mssql/server:2022-latest
-    container_name: <nombre-carpeta>
-    environment:
-      ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
-    ports:
-      - "1433:1433"
-    volumes:
-      - <nombre-carpeta>_data:/var/opt/mssql
-
-volumes:
-  <nombre-carpeta>_data:
-```
+- PostgreSQL **no** forma parte del `docker-compose.yml`: el proyecto usa una instancia de PostgreSQL existente (local o en el VPS), con un usuario y una base propios (`dulceatardecer`) sin permisos sobre otras bases. Quien no tenga PostgreSQL lo levanta con el `docker run` documentado en el README.
+- El `docker-compose.yml` solo define `api` y `migrations` (perfil `tools`), que se unen a la red externa del contenedor de PostgreSQL (`DB_NETWORK`) y lo alcanzan por su nombre (`DB_HOST`). No volver a agregar un servicio de base de datos al compose.
+- Credenciales siempre desde `.env` (gitignored), nunca en texto plano en el compose.
 
 ## 4. Arquitectura
 
@@ -136,7 +113,7 @@ Patrón para entidades que aceptan una imagen u otro archivo:
 > ✏️ Ajustar según el estado real del proyecto.
 
 - Si no hay proyecto de tests todavía y se agrega un módulo con lógica no trivial, proponer (no imponer) crear `/tests/<Proyecto>.UnitTests` con xUnit + FluentAssertions antes de escalar el proyecto.
-- Si ya existe: unit tests para repositorios/lógica de negocio con mocks, integration tests contra SQL Server real (Testcontainers) para flujos completos de un endpoint.
+- Si ya existe: unit tests para repositorios/lógica de negocio con mocks, integration tests contra PostgreSQL real (Testcontainers) para flujos completos de un endpoint.
 
 ## 13. Checklist: crear un módulo nuevo
 

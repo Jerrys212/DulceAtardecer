@@ -27,7 +27,7 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<AuditableEntityInterceptor>();
 builder.Services.AddDbContext<ApplicationDbContext>((serviceProvider, options) => options
-    .UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"))
+    .UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"))
     .AddInterceptors(serviceProvider.GetRequiredService<AuditableEntityInterceptor>())
     .UseSeeding((context, _) => DataSeeder.Seed(context, builder.Configuration))
     .UseAsyncSeeding((context, _, cancellationToken) =>
