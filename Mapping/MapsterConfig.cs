@@ -48,5 +48,17 @@ public static class MapsterConfig
 
         TypeAdapterConfig<Extra, ActiveExtraDto>.NewConfig()
             .MapToConstructor(true);
+
+        TypeAdapterConfig<Product, ProductDto>.NewConfig()
+            .MapToConstructor(true)
+            .Map(dest => dest.CategoryId, src => src.Subcategory!.CategoryId)
+            .Map(dest => dest.CategoryName, src => src.Subcategory!.Category!.Name)
+            .Map(dest => dest.SubcategoryName, src => src.Subcategory!.Name);
+
+        TypeAdapterConfig<Product, AvailableProductDto>.NewConfig()
+            .MapToConstructor(true)
+            .Map(dest => dest.CategoryId, src => src.Subcategory!.CategoryId)
+            .Map(dest => dest.CategoryName, src => src.Subcategory!.Category!.Name)
+            .Map(dest => dest.SubcategoryName, src => src.Subcategory!.Name);
     }
 }
