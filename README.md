@@ -11,7 +11,7 @@ Próximos módulos: productos, ventas y cocina.
 ## Stack
 
 - .NET 10 / ASP.NET Core Web API con controllers
-- Entity Framework Core 10 + SQL Server 2022
+- Entity Framework Core 10 + PostgreSQL 16 (Npgsql)
 - ASP.NET Core Identity + JWT (HS256)
 - Mapster, Asp.Versioning (`/api/v1/...`), OpenAPI
 
@@ -65,14 +65,12 @@ Todas las respuestas, incluidas las de error, tienen la misma forma:
    ```
 
    En `.env` completa:
-   - `ConnectionStrings__DefaultConnection`: con la contraseña de tu SQL Server.
-   - `MSSQL_SA_PASSWORD`: la misma contraseña.
+   - `POSTGRES_PASSWORD`: la contraseña de PostgreSQL.
+   - `ConnectionStrings__DefaultConnection`: con esa misma contraseña en `Password=`.
    - `ApiSettings__SecretKey`: una clave aleatoria de al menos 32 bytes, por ejemplo `openssl rand -base64 48`.
    - `InitialAdmin__Password`: al menos 10 caracteres.
 
-   La contraseña de SQL Server debe cumplir la política de SQL Server: 8 o más caracteres, con mayúsculas, minúsculas y números o símbolos.
-
-2. **Levanta SQL Server:**
+2. **Levanta PostgreSQL** (queda en `localhost:5432`):
 
    ```bash
    docker compose up -d dulceatardecer
@@ -122,14 +120,14 @@ El `docker-compose.yml` define tres servicios:
 
 | Servicio | Qué hace |
 | --- | --- |
-| `dulceatardecer` | SQL Server 2022 con un volumen persistente. Solo escucha en `127.0.0.1`. |
+| `dulceatardecer` | PostgreSQL 16 con un volumen persistente. Solo escucha en `127.0.0.1`. |
 | `api` | La API. Escucha en `127.0.0.1:8080` para quedar detrás de un reverse proxy con HTTPS. |
 | `migrations` | Aplica migraciones y crea el admin inicial. Solo corre cuando lo pides (perfil `tools`). |
 
 ### Pasos
 
 1. **Instala Docker y Docker Compose en el VPS, clona el repo y crea el `.env`** a partir de `.env.example`. En el VPS solo se usan:
-   - `MSSQL_SA_PASSWORD`
+   - `POSTGRES_USER` y `POSTGRES_PASSWORD`
    - `ApiSettings__SecretKey`
    - `InitialAdmin__Username` e `InitialAdmin__Password`
    - `CORS_ALLOWED_ORIGIN`: la URL del frontend.
@@ -186,13 +184,19 @@ El comando imprime una contraseña temporal, cierra todas las sesiones de ese ad
 
 ### Respaldos
 
-Los datos viven en el volumen `dulceatardecer_data`. Para un respaldo rápido:
+Los datos viven en el volumen `dulceatardecer_data`. Para generar un respaldo en el formato comprimido de `pg_dump`:
 
 ```bash
-docker exec dulceatardecer /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -C \
-  -Q "BACKUP DATABASE DulceAtardecer TO DISK='/var/opt/mssql/backup.bak'"
-docker cp dulceatardecer:/var/opt/mssql/backup.bak ./backup.bak
+docker compose exec -T dulceatardecer pg_dump -U dulceatardecer -d dulceatardecer -Fc > backup.dump
 ```
+
+Para restaurarlo (reemplaza los objetos que ya existan en la base):
+
+```bash
+docker compose exec -T dulceatardecer pg_restore -U dulceatardecer -d dulceatardecer --clean --if-exists < backup.dump
+```
+
+Si cambiaste `POSTGRES_USER`, usa ese usuario en `-U`.
 
 ## Ramas y commits
 
