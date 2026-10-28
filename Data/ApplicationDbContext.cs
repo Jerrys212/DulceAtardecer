@@ -28,6 +28,10 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<Subcategory> Subcategories => Set<Subcategory>();
     public DbSet<Extra> Extras => Set<Extra>();
     public DbSet<Product> Products => Set<Product>();
+    public DbSet<Sale> Sales => Set<Sale>();
+    public DbSet<SaleItem> SaleItems => Set<SaleItem>();
+    public DbSet<SaleItemExtra> SaleItemExtras => Set<SaleItemExtra>();
+    public DbSet<SaleModification> SaleModifications => Set<SaleModification>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -131,6 +135,78 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
                 .WithMany()
                 .HasForeignKey(p => p.SubcategoryId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<Sale>(sale =>
+        {
+            sale.Property(s => s.CashierId).HasMaxLength(UserIdLength);
+            sale.Property(s => s.IdempotencyKey).HasMaxLength(100);
+            sale.Property(s => s.CustomerDescription).HasMaxLength(100);
+            sale.Property(s => s.Status).HasConversion<string>().HasMaxLength(20);
+            sale.Property(s => s.Subtotal).HasPrecision(18, 2);
+            sale.Property(s => s.Tax).HasPrecision(18, 2);
+            sale.Property(s => s.Total).HasPrecision(18, 2);
+            sale.Property(s => s.PaymentMethod).HasConversion<string>().HasMaxLength(20);
+            sale.Property(s => s.PaidById).HasMaxLength(UserIdLength);
+            sale.Property(s => s.CancelReason).HasMaxLength(200);
+            sale.Property(s => s.CancelledById).HasMaxLength(UserIdLength);
+            sale.Property(s => s.CreatedById).HasMaxLength(UserIdLength);
+            sale.Property(s => s.UpdatedById).HasMaxLength(UserIdLength);
+            sale.Property(s => s.Version).IsRowVersion();
+            sale.HasIndex(s => new { s.CashierId, s.IdempotencyKey }).IsUnique();
+            sale.HasIndex(s => new { s.Status, s.CreatedAt });
+            sale.HasOne(s => s.Cashier)
+                .WithMany()
+                .HasForeignKey(s => s.CashierId)
+                .OnDelete(DeleteBehavior.Restrict);
+            sale.HasMany(s => s.Items)
+                .WithOne()
+                .HasForeignKey(i => i.SaleId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<SaleItem>(item =>
+        {
+            item.ToTable(t => t.HasCheckConstraint("CK_SaleItems_Quantity_Range", "\"Quantity\" BETWEEN 1 AND 50"));
+            item.Property(i => i.ProductName).HasMaxLength(100);
+            item.Property(i => i.CategoryName).HasMaxLength(50);
+            item.Property(i => i.SubcategoryName).HasMaxLength(50);
+            item.Property(i => i.ProductPrice).HasPrecision(18, 2);
+            item.Property(i => i.UnitPrice).HasPrecision(18, 2);
+            item.Property(i => i.Amount).HasPrecision(18, 2);
+            item.Property(i => i.Note).HasMaxLength(200);
+            item.HasOne<Product>()
+                .WithMany()
+                .HasForeignKey(i => i.ProductId)
+                .OnDelete(DeleteBehavior.Restrict);
+            item.HasMany(i => i.Extras)
+                .WithOne()
+                .HasForeignKey(e => e.SaleItemId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<SaleItemExtra>(extra =>
+        {
+            extra.ToTable(t => t.HasCheckConstraint("CK_SaleItemExtras_Quantity_Range", "\"Quantity\" BETWEEN 1 AND 10"));
+            extra.Property(e => e.Name).HasMaxLength(50);
+            extra.Property(e => e.Price).HasPrecision(18, 2);
+            extra.HasIndex(e => new { e.SaleItemId, e.ExtraId }).IsUnique();
+            extra.HasOne<Extra>()
+                .WithMany()
+                .HasForeignKey(e => e.ExtraId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<SaleModification>(modification =>
+        {
+            modification.Property(m => m.ModifiedById).HasMaxLength(UserIdLength);
+            modification.Property(m => m.PreviousTotal).HasPrecision(18, 2);
+            modification.Property(m => m.NewTotal).HasPrecision(18, 2);
+            modification.HasIndex(m => m.SaleId);
+            modification.HasOne<Sale>()
+                .WithMany()
+                .HasForeignKey(m => m.SaleId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }
