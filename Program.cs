@@ -68,6 +68,7 @@ builder.Services.AddScoped<ISessionRepository, SessionRepository>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IAuditRepository, AuditRepository>();
 builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
+builder.Services.AddScoped<IExtraRepository, ExtraRepository>();
 
 builder.Services.AddRateLimiter(options =>
 {
@@ -188,7 +189,12 @@ builder.Services.AddApiVersioning(options =>
     });
 
 builder.Services.ConfigureHttpJsonOptions(options => options.SerializerOptions.NumberHandling = JsonNumberHandling.Strict);
-builder.Services.AddOpenApi("v1", options => options.AddOperationTransformer<ApiResponseStatusExampleTransformer>());
+builder.Services.AddOpenApi("v1", options =>
+{
+    options.AddDocumentTransformer<BearerSecuritySchemeTransformer>();
+    options.AddOperationTransformer<BearerSecuritySchemeTransformer>();
+    options.AddOperationTransformer<ApiResponseStatusExampleTransformer>();
+});
 
 string[] allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 builder.Services.AddCors(options => options.AddPolicy(PolicyNames.AllowSpecificOrigin, policy => policy
@@ -214,7 +220,7 @@ app.UseStatusCodePages(async context =>
     await response.WriteAsJsonAsync(ApiResponse.Fail(response.StatusCode));
 });
 
-if (app.Environment.IsDevelopment())
+if (app.Configuration.GetValue<bool>("OpenApi:Enabled"))
 {
     app.MapOpenApi();
     app.MapGet("/swagger", () => Results.Content(SwaggerUiPage.Html, "text/html")).ExcludeFromDescription();

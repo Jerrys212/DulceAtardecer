@@ -42,5 +42,11 @@ public static class MapsterConfig
 
         TypeAdapterConfig<Category, ActiveCategoryDto>.NewConfig()
             .MapToConstructor(true);
+
+        TypeAdapterConfig<Extra, ExtraDto>.NewConfig()
+            .MapToConstructor(true);
+
+        TypeAdapterConfig<Extra, ActiveExtraDto>.NewConfig()
+            .MapToConstructor(true);
     }
 }

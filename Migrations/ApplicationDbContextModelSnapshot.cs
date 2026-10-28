@@ -199,6 +199,50 @@ namespace DulceAtardecer.Migrations
                         });
                 });
 
+            modelBuilder.Entity("DulceAtardecer.Models.Extra", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreatedById")
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("citext");
+
+                    b.Property<decimal>("Price")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UpdatedById")
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("Extras", t =>
+                        {
+                            t.HasCheckConstraint("CK_Extras_Name_Length", "char_length(\"Name\") BETWEEN 2 AND 50");
+
+                            t.HasCheckConstraint("CK_Extras_Price_Range", "\"Price\" BETWEEN 0 AND 9999.99");
+                        });
+                });
+
             modelBuilder.Entity("DulceAtardecer.Models.RefreshToken", b =>
                 {
                     b.Property<Guid>("Id")

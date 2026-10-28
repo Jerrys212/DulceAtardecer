@@ -6,6 +6,7 @@ Módulos actuales:
 
 - **Usuarios, autenticación y sesiones**: inicio de sesión con JWT y refresh token rotativo, gestión de usuarios por el administrador, roles fijos (`Admin`, `Cashier`, `Kitchen`), revocación inmediata de sesiones y auditoría de eventos de seguridad.
 - **Categorías y subcategorías**: clasificación de productos en dos niveles. El administrador las crea, edita, activa y desactiva; el punto de venta consulta el árbol de lo disponible en `GET /api/v1/categories`.
+- **Extras**: catálogo global de agregados con precio (incluye IVA; puede ser 0). El administrador los gestiona; el punto de venta consulta los activos en `GET /api/v1/extras`.
 
 Próximos módulos: productos, ventas y cocina.
 
@@ -20,7 +21,7 @@ Próximos módulos: productos, ventas y cocina.
 
 ```
 Constants/      Nombres de roles, claims, políticas y acciones de auditoría
-Controllers/    AuthController, UsersController, CategoriesController
+Controllers/    AuthController, UsersController, CategoriesController, ExtrasController
 Data/           ApplicationDbContext, interceptor de auditoría, DataSeeder
 Mapping/        Configuración de Mapster
 Middleware/     Manejo global de errores y filtros
@@ -109,7 +110,7 @@ Queda en `localhost:5432` con el usuario y la base `dulceatardecer`.
    dotnet run --launch-profile https
    ```
 
-   La documentación interactiva queda en `https://localhost:7201/swagger` (solo en Development).
+   La documentación interactiva queda en `https://localhost:7201/swagger`. Para probar endpoints protegidos, haz login, copia el `accessToken` y pégalo en **Authorize**.
 
 4. **Entra con el administrador inicial** (`InitialAdmin__Username` / `InitialAdmin__Password`). El sistema te pedirá cambiar la contraseña antes de permitir cualquier otra acción.
 
@@ -162,6 +163,7 @@ El `docker-compose.yml` no incluye PostgreSQL: la API se conecta a un contenedor
    - `ApiSettings__SecretKey`
    - `InitialAdmin__Username` e `InitialAdmin__Password`
    - `CORS_ALLOWED_ORIGIN`: la URL del frontend.
+   - `OPENAPI_ENABLED` (opcional): Swagger queda en `https://api.tu-dominio.com/swagger` para los devs; ponlo en `false` para apagarlo.
 
    Evita el carácter `$` en las contraseñas, porque Compose lo interpreta como variable.
 
