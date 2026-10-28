@@ -192,6 +192,8 @@ El `docker-compose.yml` no incluye PostgreSQL: la API se conecta a un contenedor
 
 ### Actualizar a una nueva versión
 
+Un merge a `main` despliega solo (ver [CI/CD](#cicd)). Para actualizar a mano desde el servidor:
+
 ```bash
 git pull
 docker compose --profile tools build
@@ -222,6 +224,52 @@ Para restaurarlo (reemplaza los objetos que ya existan en la base):
 ```bash
 docker exec -i <contenedor> pg_restore -U dulceatardecer -d dulceatardecer --clean --if-exists < backup.dump
 ```
+
+## CI/CD
+
+El workflow [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml) corre en GitHub Actions.
+
+| Evento | `ci` | `deploy` |
+| --- | --- | --- |
+| PR hacia `dev` o `main` | ✅ | — |
+| Push a `dev` | ✅ | — |
+| Push a `main` (merge de un PR) | ✅ | ✅ si `ci` pasa |
+| Manual (`workflow_dispatch`) | ✅ | ✅ solo si se lanza sobre `main` |
+
+**`ci` (Compilar y verificar):**
+
+1. `dotnet restore` y `dotnet build -c Release`.
+2. `dotnet ef migrations has-pending-model-changes`: falla si cambiaste el modelo y olvidaste crear la migración.
+3. Construye las imágenes Docker `runtime` y `migrations`, para detectar un `Dockerfile` roto antes de desplegar.
+
+Si haces un push nuevo a un PR, se cancela la ejecución anterior de ese PR. Los despliegues nunca se cancelan y corren de uno en uno.
+
+**`deploy` (Desplegar en el VPS):** abre una conexión SSH al servidor sin enviar ningún comando. Lo que se ejecuta lo decide el propio servidor con un comando forzado en `authorized_keys`. Así, aunque alguien obtuviera la llave, solo podría lanzar el despliegue.
+
+### Configurar el despliegue
+
+1. **Genera una llave solo para el despliegue** (sin passphrase):
+
+   ```bash
+   ssh-keygen -t ed25519 -N "" -C "github-actions-deploy" -f deploy_key
+   ```
+
+2. **Autoriza la llave pública en el VPS con un comando forzado.** Agrega una línea al `~/.ssh/authorized_keys` del usuario de despliegue:
+
+   ```
+   command="/ruta/a/deploy.sh",restrict ssh-ed25519 AAAA... github-actions-deploy
+   ```
+
+   El script hace lo mismo que la [actualización manual](#actualizar-a-una-nueva-versión): `git pull`, construir las imágenes, aplicar las migraciones y levantar la API.
+
+3. **Crea los secrets del repositorio** (Settings → Secrets and variables → Actions):
+
+   | Secret | Valor |
+   | --- | --- |
+   | `VPS_SSH_KEY` | La llave privada completa (`deploy_key`). |
+   | `VPS_KNOWN_HOSTS` | La salida de `ssh-keyscan <ip-del-vps>`, para que Actions verifique la identidad del servidor. |
+
+4. Borra la llave privada local después de guardarla en el secret.
 
 ## Ramas y commits
 
