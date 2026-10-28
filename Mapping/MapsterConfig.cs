@@ -30,5 +30,17 @@ public static class MapsterConfig
 
         TypeAdapterConfig<Session, SessionDto>.NewConfig()
             .MapToConstructor(true);
+
+        TypeAdapterConfig<Subcategory, SubcategoryDto>.NewConfig()
+            .MapToConstructor(true);
+
+        TypeAdapterConfig<Category, CategoryDto>.NewConfig()
+            .MapToConstructor(true);
+
+        TypeAdapterConfig<Subcategory, ActiveSubcategoryDto>.NewConfig()
+            .MapToConstructor(true);
+
+        TypeAdapterConfig<Category, ActiveCategoryDto>.NewConfig()
+            .MapToConstructor(true);
     }
 }
