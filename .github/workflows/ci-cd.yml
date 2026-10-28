@@ -62,4 +62,7 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
 
       - name: Desplegar
-        run: ssh -i ~/.ssh/deploy_key -o ServerAliveInterval=30 jerryg@74.208.40.203
+        env:
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: ssh -i ~/.ssh/deploy_key -o ServerAliveInterval=30 "$VPS_USER@$VPS_HOST"
