@@ -14,12 +14,21 @@ public static class DataSeeder
         ApplicationDbContext db = (ApplicationDbContext)context;
         string adminRoleId = db.Roles.Where(r => r.Name == RoleNames.Admin).Select(r => r.Id).Single();
 
-        if (db.UserRoles.Any(ur => ur.RoleId == adminRoleId))
+        if (!db.UserRoles.Any(ur => ur.RoleId == adminRoleId))
         {
-            return;
+            AddInitialAdmin(db, adminRoleId, configuration);
         }
 
-        AddInitialAdmin(db, adminRoleId, configuration);
+        if (!db.Categories.Any())
+        {
+            AddCatalog(db);
+        }
+
+        if (!db.Extras.Any())
+        {
+            AddExtras(db);
+        }
+
         db.SaveChanges();
     }
 
@@ -31,12 +40,21 @@ public static class DataSeeder
             .Select(r => r.Id)
             .SingleAsync(cancellationToken);
 
-        if (await db.UserRoles.AnyAsync(ur => ur.RoleId == adminRoleId, cancellationToken))
+        if (!await db.UserRoles.AnyAsync(ur => ur.RoleId == adminRoleId, cancellationToken))
         {
-            return;
+            AddInitialAdmin(db, adminRoleId, configuration);
         }
 
-        AddInitialAdmin(db, adminRoleId, configuration);
+        if (!await db.Categories.AnyAsync(cancellationToken))
+        {
+            AddCatalog(db);
+        }
+
+        if (!await db.Extras.AnyAsync(cancellationToken))
+        {
+            AddExtras(db);
+        }
+
         await db.SaveChangesAsync(cancellationToken);
     }
 
@@ -68,4 +86,31 @@ public static class DataSeeder
         db.Users.Add(admin);
         db.UserRoles.Add(new IdentityUserRole<string> { UserId = admin.Id, RoleId = adminRoleId });
     }
+
+    private static void AddCatalog(ApplicationDbContext db)
+    {
+        foreach (CategorySeed categorySeed in CatalogSeedData.Categories)
+        {
+            Category category = new() { Name = categorySeed.Name };
+
+            foreach (SubcategorySeed subcategorySeed in categorySeed.Subcategories)
+            {
+                Subcategory subcategory = new() { Name = subcategorySeed.Name, Category = category };
+                category.Subcategories.Add(subcategory);
+
+                db.Products.AddRange(subcategorySeed.Products.Select(p => new Product
+                {
+                    Name = p.Name,
+                    Description = p.Description,
+                    Price = p.Price,
+                    Subcategory = subcategory,
+                }));
+            }
+
+            db.Categories.Add(category);
+        }
+    }
+
+    private static void AddExtras(ApplicationDbContext db) =>
+        db.Extras.AddRange(CatalogSeedData.Extras.Select(e => new Extra { Name = e.Name, Price = e.Price }));
 }
