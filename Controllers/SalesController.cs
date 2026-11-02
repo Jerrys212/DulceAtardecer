@@ -17,9 +17,31 @@ namespace DulceAtardecer.Controllers;
 [Authorize]
 [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status401Unauthorized)]
 [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status403Forbidden)]
-public class SalesController(ISaleRepository saleRepository) : ControllerBase
+public class SalesController(ISaleRepository saleRepository, TimeProvider timeProvider) : ControllerBase
 {
     private const string IdempotencyKeyHeader = "Idempotency-Key";
+
+    [HttpGet]
+    [Authorize(Roles = Permissions.SalesViewHistory)]
+    [ProducesResponseType<ApiResponse<PagedResult<SaleDto>>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetAll([FromQuery] SalesQueryDto query, CancellationToken cancellationToken)
+    {
+        PagedResult<Sale> sales = await saleRepository.GetPagedAsync(
+            ReportPeriod.Resolve(query.From, query.To, BusinessTime.Today(timeProvider)),
+            query.Status,
+            query.PaymentMethod,
+            query.CashierId,
+            query.Page,
+            query.PageSize,
+            cancellationToken);
+
+        return Ok(ApiResponse.Ok(new PagedResult<SaleDto>(
+            sales.Items.Adapt<List<SaleDto>>(),
+            sales.Page,
+            sales.PageSize,
+            sales.TotalCount)));
+    }
 
     [HttpGet("pending")]
     [Authorize(Roles = Permissions.OrdersViewPending)]

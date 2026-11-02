@@ -6,6 +6,15 @@ public interface ISaleRepository
 {
     Task<IReadOnlyList<Sale>> GetPendingAsync(CancellationToken cancellationToken);
 
+    Task<PagedResult<Sale>> GetPagedAsync(
+        ReportPeriod period,
+        SaleStatus? status,
+        PaymentMethod? paymentMethod,
+        string? cashierId,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken);
+
     Task<Sale> GetByIdAsync(Guid id, CancellationToken cancellationToken);
 
     Task<(Sale Sale, bool Created)> CreateAsync(

@@ -2,6 +2,24 @@ using System.ComponentModel.DataAnnotations;
 
 namespace DulceAtardecer.Models.Dtos;
 
+public record SalesQueryDto : ReportPeriodQueryDto
+{
+    [EnumDataType(typeof(SaleStatus), ErrorMessage = "El estado debe ser Preparing, Paid o Cancelled")]
+    public SaleStatus? Status { get; init; }
+
+    [EnumDataType(typeof(PaymentMethod), ErrorMessage = "El método de pago debe ser Cash, Card o Transfer")]
+    public PaymentMethod? PaymentMethod { get; init; }
+
+    [MaxLength(450, ErrorMessage = "El cajero no es válido")]
+    public string? CashierId { get; init; }
+
+    [Range(1, int.MaxValue, ErrorMessage = "La página debe ser mayor o igual a 1")]
+    public int Page { get; init; } = 1;
+
+    [Range(1, 50, ErrorMessage = "El tamaño de página debe estar entre 1 y 50")]
+    public int PageSize { get; init; } = 10;
+}
+
 public record CreateSaleDto(
     [TrimmedLength(0, 100, ErrorMessage = "La descripción del cliente no puede superar los 100 caracteres")]
     string? CustomerDescription,

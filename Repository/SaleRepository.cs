@@ -1,6 +1,7 @@
 using DulceAtardecer.Data;
 using DulceAtardecer.Models;
 using DulceAtardecer.Repository.IRepository;
+using DulceAtardecer.Services;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
@@ -24,6 +25,50 @@ public class SaleRepository(ApplicationDbContext db, TimeProvider timeProvider) 
             .OrderBy(s => s.CreatedAt)
             .ThenBy(s => s.Id)
             .ToListAsync(cancellationToken);
+
+    public async Task<PagedResult<Sale>> GetPagedAsync(
+        ReportPeriod period,
+        SaleStatus? status,
+        PaymentMethod? paymentMethod,
+        string? cashierId,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken)
+    {
+        (DateTimeOffset start, DateTimeOffset end) = BusinessTime.ToUtcRange(period);
+
+        IQueryable<Sale> Filter(IQueryable<Sale> query)
+        {
+            query = query.Where(s => s.CreatedAt >= start && s.CreatedAt < end);
+
+            if (status is not null)
+            {
+                query = query.Where(s => s.Status == status);
+            }
+
+            if (paymentMethod is not null)
+            {
+                query = query.Where(s => s.PaymentMethod == paymentMethod);
+            }
+
+            if (!string.IsNullOrWhiteSpace(cashierId))
+            {
+                query = query.Where(s => s.CashierId == cashierId);
+            }
+
+            return query;
+        }
+
+        int totalCount = await Filter(db.Sales.AsNoTracking()).CountAsync(cancellationToken);
+        List<Sale> items = await Filter(WithDetails())
+            .OrderByDescending(s => s.CreatedAt)
+            .ThenByDescending(s => s.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        return new PagedResult<Sale>(items, page, pageSize, totalCount);
+    }
 
     public async Task<Sale> GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
         await WithDetails().SingleOrDefaultAsync(s => s.Id == id, cancellationToken)
