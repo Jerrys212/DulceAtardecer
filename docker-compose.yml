@@ -15,6 +15,7 @@ services:
       InitialAdmin__Password: ${InitialAdmin__Password:?Define InitialAdmin__Password en .env}
       Cors__AllowedOrigins__0: ${CORS_ALLOWED_ORIGIN:-}
       OpenApi__Enabled: ${OPENAPI_ENABLED:-true}
+      DemoData__SeedSales: ${SEED_DEMO_SALES:-false}
     ports:
       - "127.0.0.1:${API_PORT:-8080}:8080"
     networks:

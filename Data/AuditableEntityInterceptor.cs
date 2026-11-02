@@ -39,7 +39,11 @@ public class AuditableEntityInterceptor(IHttpContextAccessor httpContextAccessor
         {
             if (entry.State == EntityState.Added)
             {
-                entry.Entity.CreatedAt = now;
+                if (entry.Entity.CreatedAt == default)
+                {
+                    entry.Entity.CreatedAt = now;
+                }
+
                 entry.Entity.CreatedById ??= userId;
             }
             else if (entry.State == EntityState.Modified)
